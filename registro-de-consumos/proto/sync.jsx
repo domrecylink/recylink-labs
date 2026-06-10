@@ -9,7 +9,7 @@
 
 const RC_CONFIG = {
   // 👉 Pega aquí la URL /exec de tu Apps Script desplegado.
-  APPS_SCRIPT_URL: "REEMPLAZAR_CON_URL_DE_APPS_SCRIPT",
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxP25MmfKXbCQJzh1gj2KCkMjOMLGLLs6zuWcZdPTQ58_E9prlNfhXwThVIaLFyPANu/exec",
 
   SPREADSHEET_URL:
     "https://docs.google.com/spreadsheets/d/1e6v7yPP05w05OIfsHRyyU3cfXXDPhVzg43TL_HvXihU",
