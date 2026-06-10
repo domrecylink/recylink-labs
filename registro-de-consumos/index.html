@@ -13,9 +13,6 @@
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
-  <!-- Google Identity Services (for OAuth) -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-
   <!-- Document parsers: XLSX (Iconstruye) + pdf.js (Enel/Aguas Andinas) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -38,7 +35,7 @@
   <!-- Shell (must come last) -->
   <script type="text/babel" src="proto/shell.jsx"></script>
 
-  <!-- Google OAuth gate + Sheets/Drive integration layer -->
+  <!-- Apps Script-backed Sheets/Drive integration layer (sin login) -->
   <script type="text/babel" src="proto/sync.jsx"></script>
 </head>
 <body>
@@ -48,11 +45,11 @@
     const Root = () => (
       <StateProvider>
         <StoreBridge />
-        <AuthGate>
-          <Shell />
-          <UserChip />
-          <SyncStatus />
-        </AuthGate>
+        <SyncBootstrap />
+        <SyncToaster />
+        <Shell />
+        <SheetLink />
+        <SyncStatus />
       </StateProvider>
     );
     ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
