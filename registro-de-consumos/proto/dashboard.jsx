@@ -127,8 +127,11 @@ const MultiLineChart = ({ months: monthArr, series, unit, h = 220 }) => {
   const sy = y => padT + (1 - (y / yMax)) * innerH;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => yMax * t);
 
+  const [hoverIdx, setHoverIdx] = React.useState(null);
+  const colW = n > 1 ? innerW / (n - 1) : innerW;
+
   return (
-    <div>
+    <div style={{ position: "relative" }}>
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ display: "block", overflow: "visible" }}>
         {/* y grid */}
         {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
@@ -170,7 +173,61 @@ const MultiLineChart = ({ months: monthArr, series, unit, h = 220 }) => {
             </g>
           );
         })}
+
+        {/* hover guide line + highlighted points */}
+        {hoverIdx != null && (
+          <g style={{ pointerEvents: "none" }}>
+            <line x1={sx(hoverIdx)} x2={sx(hoverIdx)} y1={padT} y2={padT + innerH}
+                  stroke="var(--rl-gray-500)" strokeWidth="1" strokeDasharray="3 3" />
+            {series.map((s, si) => (
+              <circle key={si} cx={sx(hoverIdx)} cy={sy(s.data[hoverIdx])} r="5"
+                      fill={s.color} stroke="#FFFFFF" strokeWidth="2" />
+            ))}
+          </g>
+        )}
+
+        {/* invisible hover columns (must come last to capture events) */}
+        {monthArr.map((mk, i) => (
+          <rect key={"hover-" + i}
+                x={sx(i) - colW / 2} y={padT}
+                width={colW} height={innerH}
+                fill="transparent"
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+                style={{ cursor: "crosshair" }} />
+        ))}
       </svg>
+
+      {/* floating tooltip */}
+      {hoverIdx != null && (
+        <div style={{
+          position: "absolute",
+          left: ((sx(hoverIdx) / w) * 100) + "%",
+          top: 0,
+          transform: hoverIdx >= n / 2 ? "translateX(calc(-100% - 12px))" : "translateX(12px)",
+          background: "var(--rl-gray-900, #111827)",
+          color: "#fff",
+          padding: "8px 10px",
+          borderRadius: 8,
+          font: "500 11px/1.4 var(--rl-font-body)",
+          pointerEvents: "none",
+          boxShadow: "0 6px 16px rgba(0,0,0,0.18)",
+          minWidth: 150,
+          zIndex: 10,
+          whiteSpace: "nowrap",
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 4, opacity: 0.85, textTransform: "capitalize" }}>
+            {monthLabelShort(monthArr[hoverIdx])}
+          </div>
+          {series.map((s, si) => (
+            <div key={si} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: s.color, flexShrink: 0 }} />
+              <span style={{ flex: 1, opacity: 0.9 }}>{s.label}</span>
+              <strong style={{ marginLeft: 8 }}>{fmtNum(s.data[hoverIdx])} {unit}</strong>
+            </div>
+          ))}
+        </div>
+      )}
       {/* legend */}
       <div className="prt-row" style={{ flexWrap: "wrap", gap: 14, marginTop: 8, padding: "0 8px" }}>
         {series.map((s, i) => {
@@ -197,8 +254,12 @@ const Heatmap = ({ months: monthArr, rows, color, unit }) => {
   const labW = 116;
   const w = labW + monthArr.length * cw + pad * 2;
   const h = 24 + rows.length * ch + pad * 2;
+
+  const [hover, setHover] = React.useState(null); // { ri, ci, value }
+
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div style={{ position: "relative" }}>
+     <div style={{ overflowX: "auto" }}>
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ display: "block" }}>
         {monthArr.map((mk, c) => (
           <text key={c} x={labW + c * cw + cw / 2} y={16} textAnchor="middle" fontSize="10"
@@ -212,18 +273,47 @@ const Heatmap = ({ months: monthArr, rows, color, unit }) => {
                   fontFamily="var(--rl-font-display)" fontWeight="600" fill="var(--rl-gray-700)">{r.suc}</text>
             {r.cells.map((v, ci) => {
               const intensity = v === 0 ? 0 : Math.max(0.08, v / maxV);
+              const isHover = hover && hover.ri === ri && hover.ci === ci;
               return (
                 <rect key={ci} x={labW + ci * cw + 1} y={24 + ri * ch + 2}
                       width={cw - 2} height={ch - 4} rx="3"
                       fill={color} fillOpacity={intensity * 0.85 + (v > 0 ? 0.05 : 0)}
-                      stroke="var(--rl-gray-100)" strokeWidth="0.5">
-                  <title>{r.suc} · {monthLabelShort(monthArr[ci])} · {fmtNum(v)} {unit}</title>
-                </rect>
+                      stroke={isHover ? "var(--rl-gray-900)" : "var(--rl-gray-100)"}
+                      strokeWidth={isHover ? 1.5 : 0.5}
+                      onMouseEnter={() => setHover({ ri, ci, value: v, suc: r.suc, month: monthArr[ci] })}
+                      onMouseLeave={() => setHover(null)}
+                      style={{ cursor: "pointer" }} />
               );
             })}
           </g>
         ))}
       </svg>
+     </div>
+
+      {hover && (
+        <div style={{
+          position: "absolute",
+          left: ((labW + hover.ci * cw + cw / 2) / w) * 100 + "%",
+          top: (24 + hover.ri * ch) / h * 100 + "%",
+          transform: "translate(-50%, calc(-100% - 8px))",
+          background: "var(--rl-gray-900, #111827)",
+          color: "#fff",
+          padding: "8px 10px",
+          borderRadius: 8,
+          font: "500 11px/1.4 var(--rl-font-body)",
+          pointerEvents: "none",
+          boxShadow: "0 6px 16px rgba(0,0,0,0.18)",
+          whiteSpace: "nowrap",
+          zIndex: 10,
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 4, opacity: 0.85 }}>{hover.suc}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: color, flexShrink: 0 }} />
+            <span style={{ opacity: 0.9, textTransform: "capitalize" }}>{monthLabelShort(hover.month)}</span>
+            <strong style={{ marginLeft: 8 }}>{fmtNum(hover.value)} {unit}</strong>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
