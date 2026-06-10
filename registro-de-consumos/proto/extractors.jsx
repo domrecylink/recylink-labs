@@ -1,0 +1,278 @@
+// extractors.jsx — real PDF / Excel parsers, ported 1:1 from
+// `lector_automático_facturas_(1).ipynb` and `appscript.txt`.
+// Exposes `window.rcExtract(file, provider)` → Promise<row[]>
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+}
+
+async function rcPdfText(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+  // Read up to 2 pages — Enel/Aguas Andinas relevant info is on page 1
+  // but the line-cost line sometimes wraps to page 2 on long bills.
+  const pages = [];
+  for (let p = 1; p <= Math.min(2, pdf.numPages); p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    pages.push(content.items);
+  }
+  const allItems = [].concat(...pages);
+
+  // Group items by Y coordinate (visual row), like pdfplumber's extract_text.
+  // pdf.js returns transform = [scaleX, skewX, skewY, scaleY, x, y].
+  const TOL = 2.5;
+  const lines = [];
+  for (const it of allItems) {
+    if (!it.str) continue;
+    const y = Math.round(it.transform[5]);
+    let bucket = lines.find((l) => Math.abs(l.y - y) <= TOL);
+    if (!bucket) { bucket = { y, items: [] }; lines.push(bucket); }
+    bucket.items.push(it);
+  }
+  // Sort lines top→bottom; within a line, left→right
+  lines.sort((a, b) => b.y - a.y);
+  for (const l of lines) l.items.sort((a, b) => a.transform[4] - b.transform[4]);
+
+  const lined = lines.map((l) => l.items.map((i) => i.str).join(" ")).join("\n");
+  const flat = lined.replace(/\s+/g, " ").trim();
+  return { flat, lined, combined: flat + "\n" + lined };
+}
+
+// ----- Enel parser (replica del notebook) ---------------------------------
+function rcExtraerEnel(textBundle) {
+  const texto = textBundle.combined;
+  const out = {
+    numeroCliente: "",
+    fecha: "",
+    consumo: 0,
+    costo: 0,
+  };
+
+  // A. Número de Cliente
+  const mCli = texto.match(/(\d{4,8}-\d)/);
+  if (mCli) out.numeroCliente = mCli[1];
+
+  // B. Fecha de Lectura
+  let mFecha = texto.match(/Desde\s+(\d{2}\/\d{2}\/\d{4})/i);
+  if (!mFecha) mFecha = texto.match(/(\d{2}\/\d{2}\/\d{4})/);
+  if (mFecha) {
+    const [d, m, y] = mFecha[1].split("/");
+    out.fecha = `${y}-${m}-${d}`;
+  }
+
+  // C. Consumo
+  if (/No Facturado/i.test(texto)) {
+    out.consumo = 0;
+  } else {
+    const mCons = texto.match(/Electricidad Consumida\s*\(?\s*(\d+)\s*kWh/i);
+    if (mCons) out.consumo = parseInt(mCons[1], 10);
+    else {
+      const alt = texto.match(/(\d+)\s*kWh/);
+      if (alt) out.consumo = parseInt(alt[1], 10);
+    }
+  }
+
+  // D. Costo — Total Monto Neto.
+  // Notebook strategy: scan lines, find the one whose label matches, take the
+  // last number on that line. Same regex as the original Python script.
+  const lineas = textBundle.lined.split("\n");
+  const patron = /Total\s+Monto\s+Neto/i;
+  const numRe  = /(?<![\d.\-])(\d{1,3}(?:\.\d{3})*|\d+)(?![\d.\-])/g;
+  for (const linea of lineas) {
+    if (patron.test(linea)) {
+      const montos = linea.match(numRe);
+      if (montos && montos.length) {
+        out.costo = parseInt(montos[montos.length - 1].replace(/\./g, ""), 10) || 0;
+        break;
+      }
+    }
+  }
+  // Fallback: maybe the label and the value ended up in adjacent lines.
+  // Find the index of the line with the label and check the following line.
+  if (!out.costo) {
+    for (let i = 0; i < lineas.length; i++) {
+      if (patron.test(lineas[i])) {
+        for (let j = i; j < Math.min(i + 3, lineas.length); j++) {
+          const montos = lineas[j].match(numRe);
+          if (montos && montos.length) {
+            out.costo = parseInt(montos[montos.length - 1].replace(/\./g, ""), 10) || 0;
+            if (out.costo) break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return out;
+}
+
+// ----- Aguas Andinas parser ----------------------------------------------
+function rcExtraerAguas(textBundle) {
+  const texto = textBundle.combined;
+  const out = { numeroCliente: "", fecha: "", consumo: 0, costo: 0 };
+
+  let mCli = texto.match(/Cuenta es:\s*\n*\s*([0-9\-]+)/i);
+  if (!mCli) mCli = texto.match(/cuenta[^\d]*([0-9]+-[0-9Kk])/i);
+  if (!mCli) mCli = texto.match(/Nro de cuenta[^\d]*(\d+-[0-9Kk])/i);
+  if (mCli) out.numeroCliente = mCli[1].trim();
+
+  const mFecha = texto.match(/VENCIMIENTO\s+(\d{2})-([A-Za-z]{3})-(\d{4})/i);
+  if (mFecha) {
+    const meses = { ENE:"01", FEB:"02", MAR:"03", ABR:"04", MAY:"05", JUN:"06",
+                    JUL:"07", AGO:"08", SEP:"09", OCT:"10", NOV:"11", DIC:"12" };
+    const [, dia, mesStr, anio] = mFecha;
+    const mes = meses[mesStr.toUpperCase()] || "01";
+    out.fecha = `${anio}-${mes}-${dia}`;
+  }
+
+  let mCons = texto.match(/RECOLECCION AGUAS SERVIDAS\s*([0-9\.]+)/);
+  if (mCons) out.consumo = parseInt(mCons[1].replace(/\./g, ""), 10) || 0;
+  else {
+    mCons = texto.match(/DIFERENCIA DE LECTURAS[^\d]*(\d+)/i);
+    if (mCons) out.consumo = parseInt(mCons[1], 10) || 0;
+  }
+
+  let mVenta = texto.match(/TOTAL VENTA\s*\$?\s*([0-9\.]+)/);
+  if (mVenta) out.costo = parseInt(mVenta[1].replace(/\./g, ""), 10) || 0;
+  else {
+    const mNetoIva = texto.replace(/\./g, "").match(/neto, sin IVA.*?\$([0-9]+).*?IVA.*?\$([0-9]+)/);
+    if (mNetoIva) out.costo = (parseInt(mNetoIva[1], 10) || 0) + (parseInt(mNetoIva[2], 10) || 0);
+  }
+
+  return out;
+}
+
+// ----- Iconstruye Excel parser (replica de appscript.txt) ----------------
+const RC_EXCEL = {
+  FILA_DATOS: 14,
+  COL_FECHA: 3, COL_PROVEEDOR: 9, COL_CANTIDAD: 16, COL_SUBTOTAL: 21,
+  KG_POR_CILINDRO: 45,
+};
+function rcExcelDate(val) {
+  if (val instanceof Date) return val;
+  if (typeof val === "number") {
+    const d = XLSX.SSF.parse_date_code(val);
+    if (d) return new Date(d.y, d.m - 1, d.d);
+  }
+  if (typeof val === "string") {
+    const d = new Date(val);
+    if (!isNaN(d)) return d;
+  }
+  return null;
+}
+function rcFinDeMes(y, m) {
+  const last = new Date(y, m, 0).getDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+async function rcParseIconstruye(file, tipoCombust /* "Petróleo Diesel" | "Gas" */) {
+  if (!window.XLSX) throw new Error("XLSX library no cargada");
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { cellDates: true });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const datos = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+  const desde = RC_EXCEL.FILA_DATOS - 1;
+  const filas = datos.slice(desde);
+  const filtradas = filas.filter((fila) => {
+    const ocNo = fila[0];
+    const fecha = rcExcelDate(fila[RC_EXCEL.COL_FECHA - 1]);
+    const cantidad = fila[RC_EXCEL.COL_CANTIDAD - 1];
+    return ocNo !== "" && ocNo != null &&
+      fecha instanceof Date && fecha.getFullYear() > 1990 &&
+      typeof cantidad === "number" && cantidad > 0;
+  });
+  if (!filtradas.length) return [];
+
+  // Group by año-mes + proveedor
+  const grupos = {};
+  filtradas.forEach((fila) => {
+    const fecha = rcExcelDate(fila[RC_EXCEL.COL_FECHA - 1]);
+    const proveedor = fila[RC_EXCEL.COL_PROVEEDOR - 1] || "";
+    const cantidad = fila[RC_EXCEL.COL_CANTIDAD - 1];
+    const subtotal = fila[RC_EXCEL.COL_SUBTOTAL - 1];
+    const y = fecha.getFullYear(), m = fecha.getMonth() + 1;
+    const clave = `${y}-${String(m).padStart(2, "0")}|${proveedor}`;
+    if (!grupos[clave]) grupos[clave] = { y, m, proveedor, cantidad: 0, costo: 0 };
+    grupos[clave].cantidad += cantidad;
+    grupos[clave].costo += (typeof subtotal === "number" ? subtotal : 0);
+  });
+  return Object.values(grupos).map((g) => {
+    const consumo = tipoCombust === "Gas"
+      ? g.cantidad * RC_EXCEL.KG_POR_CILINDRO
+      : g.cantidad;
+    return {
+      fecha: rcFinDeMes(g.y, g.m),
+      proveedor: g.proveedor,
+      cantidad: consumo,
+      costo: Math.round(g.costo),
+      tipoCombustible: tipoCombust,
+    };
+  });
+}
+
+// ----- Public entry point ------------------------------------------------
+// Returns an array of preview-row-shaped objects
+async function rcExtract(file, provider) {
+  const name = file.name.toLowerCase();
+  const ext = (name.match(/\.([^.]+)$/) || [])[1];
+  if (ext === "pdf") {
+    const text = await rcPdfText(file);
+    let datos, type;
+    if (provider.id === "enel" || (provider.type === "electricidad" && provider.id !== "generic")) {
+      datos = rcExtraerEnel(text); type = "electricidad";
+    } else if (provider.id === "aguas-andinas" || provider.type === "agua") {
+      datos = rcExtraerAguas(text); type = "agua";
+    } else if (provider.id === "generic") {
+      // Try Enel pattern first, then Aguas
+      datos = rcExtraerEnel(text);
+      if (datos.numeroCliente || datos.consumo) type = "electricidad";
+      else { datos = rcExtraerAguas(text); type = "agua"; }
+    } else {
+      // Default to type guess
+      type = provider.type === "any" ? "electricidad" : provider.type;
+      datos = type === "agua" ? rcExtraerAguas(text) : rcExtraerEnel(text);
+    }
+    const status = (!datos.fecha || !datos.numeroCliente)
+      ? "warn"
+      : (!datos.consumo ? "warn" : "ok");
+    return [{
+      date: datos.fecha || "",
+      sucursal: "",                       // unknown from PDF; user must complete
+      type,
+      subcat: null,
+      provider: provider.name,
+      cantidad: datos.consumo || "",
+      costo: datos.costo || "",
+      status,
+      numeroCliente: datos.numeroCliente || "",
+      sourceFile: file.name,
+    }];
+  }
+  if (ext === "xlsx" || ext === "xls") {
+    // Decide if Petróleo or Gas — guess by provider name / filename
+    let tipoCombust = "Petróleo Diesel";
+    if (/gas/i.test(provider.name) || /gas/i.test(name)) tipoCombust = "Gas";
+    const grupos = await rcParseIconstruye(file, tipoCombust);
+    if (!grupos.length) {
+      throw new Error("Sin filas válidas desde fila 14");
+    }
+    const subcatId = tipoCombust === "Gas" ? "glp" : "diesel";
+    return grupos.map((g) => ({
+      date: g.fecha,
+      sucursal: "",
+      type: "combustible",
+      subcat: subcatId,
+      provider: g.proveedor || provider.name,
+      cantidad: g.cantidad,
+      costo: g.costo,
+      status: "ok",
+      sourceFile: file.name,
+    }));
+  }
+  throw new Error("Tipo de archivo no soportado");
+}
+
+window.rcExtract = rcExtract;

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Registro de Consumos · Wireframes</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    @keyframes blink { 50% { opacity: 0; } }
+    /* Make sure artboard children stretch */
+    .dc-artboard-body > * { width: 100%; }
+  </style>
+
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="screens/primitives.jsx"></script>
+  <script type="text/babel" src="screens/landing.jsx"></script>
+  <script type="text/babel" src="screens/manual.jsx"></script>
+  <script type="text/babel" src="screens/upload.jsx"></script>
+  <script type="text/babel" src="screens/preview.jsx"></script>
+  <script type="text/babel" src="screens/dashboard.jsx"></script>
+  <script type="text/babel" src="screens/final.jsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const W = 1140;     // ancho de iframe destino — desktop
+    // heights are approx — design_canvas allows artboards to grow.
+
+    const App = () => (
+      <DesignCanvas title="Registro de Consumos · v1.0" subtitle="Wireframes lo-fi · sabor de marca Recylink · embed iframe desktop">
+
+        <DCSection id="landing" title="1 · Landing / Selector de modo"
+                   subtitle="Variante B elegida — wizard de pregunta directa, refinada.">
+          <DCArtboard id="landing-final" label="✓ Versión final · wizard refinado" width={W} height={720}>
+            <LandingFinal />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="manual" title="2 · Registro manual"
+                   subtitle="Form → preview → éxito. Empresa fija desde el host.">
+          <DCArtboard id="manual-form" label="Form · validación inline + subcat. condicional" width={W} height={860}>
+            <ManualForm />
+          </DCArtboard>
+          <DCArtboard id="manual-preview" label="Preview antes de guardar · banner atípico" width={W} height={760}>
+            <ManualPreview />
+          </DCArtboard>
+          <DCArtboard id="manual-success" label="Éxito · 1 registro agregado" width={W} height={520}>
+            <ManualSuccess />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="upload" title="3 · Subida de documentos"
+                   subtitle="Proveedor → dropzone → cola con estados independientes por archivo.">
+          <DCArtboard id="upload-1" label="Paso 1 · selector de proveedor (templates)" width={W} height={640}>
+            <UploadStep1 />
+          </DCArtboard>
+          <DCArtboard id="upload-2-idle" label="Paso 2 · dropzone idle" width={W} height={620}>
+            <UploadStep2 active={false} />
+          </DCArtboard>
+          <DCArtboard id="upload-2-active" label="Paso 2 · dropzone con archivo arrastrado" width={W} height={620}>
+            <UploadStep2 active={true} />
+          </DCArtboard>
+          <DCArtboard id="upload-3" label="Paso 3 · cola · 5 estados visibles a la vez" width={W} height={840}>
+            <UploadStep3 />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="preview" title="4 · Preview editable"
+                   subtitle="Antes de escribir en BBDD — celdas editables, duplicado inline, banners de atípico/error.">
+          <DCArtboard id="preview-table" label="Tabla preview · todos los estados" width={W} height={980}>
+            <PreviewEditable />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="dashboard" title="5 · Dashboard"
+                   subtitle="Variante A elegida — KPIs + tabs por tipo + subcat., refinada. Estados empty y edición conservados.">
+          <DCArtboard id="dashboard-final" label="✓ Versión final · KPIs + tabs por tipo + subcat." width={W} height={1320}>
+            <DashboardFinal />
+          </DCArtboard>
+          <DCArtboard id="dashboard-empty" label="Estado · vacío inicial" width={W} height={620}>
+            <DashboardEmpty />
+          </DCArtboard>
+          <DCArtboard id="dashboard-edit-ok" label="Estado · edición inline guardada (toast no intrusivo)" width={W} height={500}>
+            <DashboardEditSuccess />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="config" title="6 · Configuración de subcategorías"
+                   subtitle="Predefinidas por admin + el usuario puede crear nuevas. La unidad se hereda del tipo padre (no editable).">
+          <DCArtboard id="config-subcat" label="Subcategorías por tipo · crear / editar" width={W} height={920}>
+            <SubcatConfig />
+          </DCArtboard>
+        </DCSection>
+
+      </DesignCanvas>
+    );
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

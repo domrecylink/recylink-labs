@@ -1,0 +1,270 @@
+/* ===========================================================================
+   Recylink Design System — Colors & Type
+   Source: "Sistema de diseño Recylink" Figma file
+   ============================================================================ */
+
+/* ---- Fonts -------------------------------------------------------------- */
+/* Variable fonts (preferred — full weight axis in one file) */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("fonts/PlusJakartaSans-VariableFont_wght.ttf") format("truetype-variations");
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("fonts/PlusJakartaSans-Italic-VariableFont_wght.ttf") format("truetype-variations");
+}
+
+/* Static fallback (engines without variable-font support).
+   Use family "Plus Jakarta Sans Static" only if the variable fonts fail. */
+@font-face { font-family:"Plus Jakarta Sans Static"; font-style:normal; font-weight:400; font-display:swap; src:url("fonts/PlusJakartaSans-Regular.ttf") format("truetype"); }
+@font-face { font-family:"Plus Jakarta Sans Static"; font-style:normal; font-weight:500; font-display:swap; src:url("fonts/PlusJakartaSans-Medium.ttf") format("truetype"); }
+@font-face { font-family:"Plus Jakarta Sans Static"; font-style:normal; font-weight:600; font-display:swap; src:url("fonts/PlusJakartaSans-SemiBold.ttf") format("truetype"); }
+@font-face { font-family:"Plus Jakarta Sans Static"; font-style:normal; font-weight:700; font-display:swap; src:url("fonts/PlusJakartaSans-Bold.ttf") format("truetype"); }
+@font-face { font-family:"Plus Jakarta Sans Static"; font-style:normal; font-weight:800; font-display:swap; src:url("fonts/PlusJakartaSans-ExtraBold.ttf") format("truetype"); }
+
+:root {
+  /* ===== Type families ================================================== */
+  --rl-font-display: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --rl-font-body: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  /* Recylink uses a single typeface everywhere — Plus Jakarta Sans. */
+  --rl-font-ui: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+  --rl-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ===== GRAY (Neutral) — 12-step ramp ================================== */
+  --rl-gray-25:  #FCFCFD;
+  --rl-gray-50:  #F9FAFB;
+  --rl-gray-100: #F2F4F7;
+  --rl-gray-200: #E4E7EC;
+  --rl-gray-300: #D0D5DD;
+  --rl-gray-400: #98A2B3;
+  --rl-gray-500: #667085;
+  --rl-gray-600: #475467;
+  --rl-gray-700: #344054;
+  --rl-gray-800: #1D2939;
+  --rl-gray-900: #101828;
+  --rl-gray-950: #0C111D;
+
+  /* ===== PRIMARY — Recylink Brand Blue =================================== */
+  /* The "marca" / primary palette is anchored at 700/800/900 in the system. */
+  --rl-primary-700: #00528B; /* hover / pressed for the action color */
+  --rl-primary-800: #0083C0; /* core brand blue (logo) */
+  --rl-primary-900: #0069A6; /* PRIMARY action color (LINK wordmark blue) */
+  --rl-primary-950: #003E66; /* pressed */
+  /* Header band & light surfaces seen across the system */
+  --rl-primary-50:  #E6F4FB;
+  --rl-primary-100: #CCE9F6;
+  --rl-primary-200: #B4DAFF; /* light blue surface */
+  --rl-primary-300: #99CFFF;
+  --rl-primary-400: #A3CAFD; /* header band fill */
+  --rl-primary-light-header: #89C9F3; /* welcome header */
+
+  /* ===== ACCENT / INFO =================================================== */
+  /* No purple in the Recylink system. Accents, counts and AI callouts use
+     brand-blue tints or neutral gray. These aliases point at the blue ramp
+     so any legacy --rl-secondary-* reference renders on-brand.            */
+  --rl-secondary-25:  #FAFDFF;
+  --rl-secondary-50:  var(--rl-primary-50);   /* #E6F4FB */
+  --rl-secondary-100: var(--rl-primary-100);  /* #CCE9F6 */
+  --rl-secondary-200: var(--rl-primary-200);  /* #B4DAFF */
+  --rl-secondary-300: var(--rl-primary-300);
+  --rl-secondary-400: var(--rl-primary-400);
+  --rl-secondary-500: var(--rl-primary-800);
+  --rl-secondary-600: var(--rl-primary-800);
+  --rl-secondary-700: var(--rl-primary-700);  /* #00528B */
+  --rl-secondary-800: var(--rl-primary-700);
+  --rl-secondary-900: var(--rl-primary-900);
+  --rl-secondary-950: #00375E;
+
+  /* ===== ERROR — Red ==================================================== */
+  --rl-error-25:  #FFFBFA;
+  --rl-error-50:  #FEF3F2;
+  --rl-error-100: #FEE4E2;
+  --rl-error-200: #FECDCA;
+  --rl-error-300: #FDA29B;
+  --rl-error-400: #F97066;
+  --rl-error-500: #F04438;
+  --rl-error-600: #D92D20;
+  --rl-error-700: #B42318;
+  --rl-error-800: #912018;
+  --rl-error-900: #7A271A;
+  --rl-error-950: #55160C;
+
+  /* ===== WARNING — Amber/Orange ========================================= */
+  --rl-warning-25:  #FFFCF5;
+  --rl-warning-50:  #FFFAEB;
+  --rl-warning-100: #FEF0C7;
+  --rl-warning-200: #FEDF89;
+  --rl-warning-300: #FEC84B;
+  --rl-warning-400: #FDB022;
+  --rl-warning-500: #F79009;
+  --rl-warning-600: #DC6803;
+  --rl-warning-700: #B54708;
+  --rl-warning-800: #93370D;
+  --rl-warning-900: #7A2E0E;
+  --rl-warning-950: #4E1D09;
+
+  /* ===== SUCCESS — Green (matches RECY wordmark) ======================== */
+  --rl-success-25:  #F6FEF9;
+  --rl-success-50:  #ECFDF3;
+  --rl-success-100: #D1FADF;
+  --rl-success-200: #A6F4C5;
+  --rl-success-300: #6CE9A6;
+  --rl-success-400: #32D583;
+  --rl-success-500: #12B76A;
+  --rl-success-600: #039855;
+  --rl-success-700: #027A48;
+  --rl-success-800: #05603A;
+  --rl-success-900: #054F31;
+  --rl-success-950: #053321;
+
+  /* ===== SEMANTIC TOKENS (light theme) =================================== */
+  --rl-bg:           #FFFFFF;
+  --rl-bg-subtle:    var(--rl-gray-50);
+  --rl-bg-muted:     var(--rl-gray-100);
+  --rl-bg-canvas:    #FCFEFF;             /* "rgb(252,254,255)" page bg */
+  --rl-surface:      #FFFFFF;
+  --rl-surface-alt:  #FAFAFA;             /* "rgb(250,250,250)" alt rows */
+
+  --rl-fg:           var(--rl-gray-900);
+  --rl-fg-strong:    #000000;
+  --rl-fg-body:      #313334;             /* "rgb(49,51,52)" body text */
+  --rl-fg-muted:     #4B4B4B;             /* "rgb(75,75,75)" secondary */
+  --rl-fg-subtle:    #919599;             /* "rgb(145,149,153)" hints */
+  --rl-fg-disabled:  var(--rl-gray-400);
+  --rl-fg-on-brand:  #FFFFFF;
+
+  --rl-border:           var(--rl-gray-200);
+  --rl-border-subtle:    #EEEEEE;
+  --rl-border-strong:    var(--rl-gray-300);
+  --rl-border-focus:     var(--rl-primary-900);
+
+  /* Primary action color = #0069A6 (primary-900). */
+  --rl-action:        var(--rl-primary-900);
+  --rl-action-hover:  var(--rl-primary-700);
+  --rl-action-active: var(--rl-primary-950);
+
+  --rl-link:         var(--rl-primary-900);
+  --rl-link-hover:   var(--rl-primary-700);
+
+  /* ===== SHADOWS (from Card-dashboard + Day-picker) ====================== */
+  --rl-shadow-xs:  0px 1px 2px 0px rgba(16, 24, 40, 0.05);
+  --rl-shadow-sm:  0px 1px 2px 0px rgba(16, 24, 40, 0.06),
+                   0px 1px 3px 0px rgba(16, 24, 40, 0.10);
+  --rl-shadow-md:  0px 2px 4px -2px rgba(16, 24, 40, 0.10),
+                   0px 4px 6px -1px rgba(16, 24, 40, 0.10);
+  --rl-shadow-lg:  0px 4px 36px 0px rgba(190, 190, 190, 0.25); /* dashboard cards */
+  --rl-shadow-xl:  0px 8px 8px -4px rgba(16, 24, 40, 0.03),
+                   0px 20px 24px -4px rgba(16, 24, 40, 0.08);
+  --rl-shadow-focus: 0 0 0 4px rgba(0, 105, 166, 0.18);
+
+  /* ===== RADII ========================================================= */
+  --rl-radius-xs: 4px;
+  --rl-radius-sm: 6px;
+  --rl-radius-md: 8px;
+  --rl-radius-lg: 10px;   /* dashboard cards */
+  --rl-radius-xl: 16px;   /* large containers */
+  --rl-radius-2xl: 24px;
+  --rl-radius-3xl: 30px;  /* page headers */
+  --rl-radius-pill: 999px;
+
+  /* ===== SPACING SCALE (4-pt grid) ====================================== */
+  --rl-space-0: 0;
+  --rl-space-1: 4px;
+  --rl-space-2: 8px;
+  --rl-space-3: 12px;
+  --rl-space-4: 16px;
+  --rl-space-5: 20px;
+  --rl-space-6: 24px;
+  --rl-space-8: 32px;
+  --rl-space-10: 40px;
+  --rl-space-12: 48px;
+  --rl-space-16: 64px;
+  --rl-space-24: 96px;
+
+  /* ===== TYPE SCALE ===================================================== */
+  /* Display — Plus Jakarta Sans (Bold) — used on hero/section headers      */
+  --rl-display-2xl: 700 72px/90px var(--rl-font-display);
+  --rl-display-xl:  700 60px/72px var(--rl-font-display);   /* "Colores" 60/72 */
+  --rl-display-lg:  700 48px/60px var(--rl-font-display);
+  --rl-display-md:  700 36px/44px var(--rl-font-display);
+  --rl-display-sm:  700 30px/38px var(--rl-font-display);   /* section H */
+  --rl-display-xs:  700 24px/32px var(--rl-font-display);
+
+  /* Headings */
+  --rl-h1: 700 30px/38px var(--rl-font-display);
+  --rl-h2: 600 24px/32px var(--rl-font-display);
+  --rl-h3: 600 20px/30px var(--rl-font-display);
+  --rl-h4: 600 18px/28px var(--rl-font-display);
+  --rl-h5: 600 16px/24px var(--rl-font-display);
+
+  /* Body */
+  --rl-text-lg: 400 18px/28px var(--rl-font-body);
+  --rl-text-md: 400 16px/24px var(--rl-font-body);
+  --rl-text-sm: 400 14px/20px var(--rl-font-body);
+  --rl-text-xs: 400 12px/18px var(--rl-font-body);
+
+  /* UI atoms — same family, Plus Jakarta Sans                          */
+  --rl-ui-md: 400 14px/20px var(--rl-font-ui);
+  --rl-ui-sm: 400 12px/18px var(--rl-font-ui);
+
+  --rl-letter-tight: -0.02em;
+  --rl-letter-normal: 0;
+  --rl-letter-wide: 0.10em;
+
+  /* ===== Layout / Grid ================================================== */
+  --rl-container-1140: 1140px;   /* recommended desktop content width */
+  --rl-container-1320: 1320px;
+  --rl-container-1920: 1920px;
+  --rl-container-mobile: 428px;
+  --rl-container-tablet: 834px;
+}
+
+/* ===========================================================================
+   Base reset + base styles
+   ============================================================================ */
+
+html { font-family: var(--rl-font-body); color: var(--rl-fg); }
+
+body {
+  margin: 0;
+  font: var(--rl-text-md);
+  color: var(--rl-fg-body);
+  background: var(--rl-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1 { font: var(--rl-h1); letter-spacing: var(--rl-letter-tight); margin: 0; color: var(--rl-fg); }
+h2 { font: var(--rl-h2); margin: 0; color: var(--rl-fg); }
+h3 { font: var(--rl-h3); margin: 0; color: var(--rl-fg); }
+h4 { font: var(--rl-h4); margin: 0; color: var(--rl-fg); }
+h5 { font: var(--rl-h5); margin: 0; color: var(--rl-fg); }
+p  { margin: 0; color: var(--rl-fg-body); }
+
+a { color: var(--rl-link); text-decoration: none; }
+a:hover { color: var(--rl-link-hover); text-decoration: underline; }
+
+code, pre, kbd { font-family: var(--rl-font-mono); }
+
+/* ===========================================================================
+   Utility classes (small, opt-in)
+   ============================================================================ */
+.rl-display-xl { font: var(--rl-display-xl); letter-spacing: var(--rl-letter-tight); }
+.rl-display-lg { font: var(--rl-display-lg); letter-spacing: var(--rl-letter-tight); }
+.rl-display-md { font: var(--rl-display-md); }
+.rl-display-sm { font: var(--rl-display-sm); }
+.rl-eyebrow {
+  font: 700 12px/18px var(--rl-font-display);
+  letter-spacing: var(--rl-letter-wide);
+  text-transform: uppercase;
+  color: var(--rl-fg-subtle);
+}

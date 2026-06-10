@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Registro de Consumos · Prototipo funcional</title>
+
+  <link rel="stylesheet" href="proto.css" />
+  <link rel="stylesheet" href="rc-auth.css" />
+
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <!-- Google Identity Services (for OAuth) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <!-- Document parsers: XLSX (Iconstruye) + pdf.js (Enel/Aguas Andinas) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+
+  <!-- State + icons + UI primitives -->
+  <script type="text/babel" src="proto/state.jsx"></script>
+  <script type="text/babel" src="proto/icons.jsx"></script>
+  <script type="text/babel" src="proto/primitives.jsx"></script>
+
+  <!-- Real PDF / Excel extractors (must load before upload.jsx) -->
+  <script type="text/babel" src="proto/extractors.jsx"></script>
+
+  <!-- Screens -->
+  <script type="text/babel" src="proto/landing.jsx"></script>
+  <script type="text/babel" src="proto/manual.jsx"></script>
+  <script type="text/babel" src="proto/preview.jsx"></script>
+  <script type="text/babel" src="proto/upload.jsx"></script>
+  <script type="text/babel" src="proto/dashboard.jsx"></script>
+
+  <!-- Shell (must come last) -->
+  <script type="text/babel" src="proto/shell.jsx"></script>
+
+  <!-- Google OAuth gate + Sheets/Drive integration layer -->
+  <script type="text/babel" src="proto/sync.jsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const Root = () => (
+      <StateProvider>
+        <StoreBridge />
+        <AuthGate>
+          <Shell />
+          <UserChip />
+          <SyncStatus />
+        </AuthGate>
+      </StateProvider>
+    );
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+  </script>
+</body>
+</html>
