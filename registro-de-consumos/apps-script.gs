@@ -50,9 +50,9 @@ const CONFIG = {
     AGUAS_PROCESADOS:   "1rp-qUzPUYu9dX24YZmCeNR7CXgwSzY8p",
   },
   HEADERS: {
-    Combustible:    ["Link", "Fecha", "Consumo", "Costo", "Empresa", "Sucursal", "Tipo", "Proveedor"],
-    Electricidad:   ["Link PDF", "Número de cliente", "Fecha", "Consumo total", "Costo ($)", "Empresa", "Sucursal", "Tipo de consumo", "Proveedor"],
-    Agua:           ["Link PDF", "Número de cliente", "Fecha emisión", "Consumo total", "Costo ($)", "Empresa", "Sucursal", "Tipo de consumo", "Proveedor"],
+    Combustible:    ["Link", "Fecha", "Consumo", "Costo", "Empresa", "Sucursal", "Tipo", "Proveedor", "Estado"],
+    Electricidad:   ["Link PDF", "Número de cliente", "Fecha", "Consumo total", "Costo ($)", "Empresa", "Sucursal", "Tipo de consumo", "Proveedor", "Estado"],
+    Agua:           ["Link PDF", "Número de cliente", "Fecha emisión", "Consumo total", "Costo ($)", "Empresa", "Sucursal", "Tipo de consumo", "Proveedor", "Subcategoría", "Estado"],
     "N° de cliente":["Número de cliente", "Empresa", "Sucursal", "Tipo de consumo", "Proveedor"],
     "Fill out":     ["Submission ID", "Submission time", "Nombre Usuario", "Nombre sucursal", "Mes de registro", "N° trabajadores", "N° trabajadoras", "m2 totales", "% Avance", "URL Excel Petróleo", "URL Excel Gas", "Procesado"],
   },
@@ -84,6 +84,10 @@ function doPost(e) {
     }
     if (action === "move") {
       moveFile(body.fileId, body.fromFolderId, body.toFolderId);
+      return jsonOut({ ok: true });
+    }
+    if (action === "update") {
+      updateCell(body.sheet, body.row, body.col, body.value);
       return jsonOut({ ok: true });
     }
     if (action === "init") {
@@ -127,6 +131,15 @@ function appendRows(sheetName, values) {
   }
   const start = sheet.getLastRow() + 1;
   sheet.getRange(start, 1, values.length, values[0].length).setValues(values);
+}
+
+function updateCell(sheetName, row, col, value) {
+  if (!sheetName) throw new Error("sheet name missing");
+  if (!row || !col) throw new Error("row/col missing");
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error("sheet not found: " + sheetName);
+  sheet.getRange(row, col).setValue(value);
 }
 
 function uploadFile(name, mimeType, base64, folderId) {

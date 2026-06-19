@@ -102,6 +102,19 @@ function rcCombSubcat(tipo) {
   if (t.includes("gas") || t.includes("glp")) return "glp";
   return null;
 }
+// Map a human-readable agua subcat label (as stored in the Sheets column) back to a subcat id.
+// Predefined: "Potable" → "potable", "Gris" → "gris", "Industrial" → "industrial".
+// Anything else (custom tipos like "Riego") → "otro:<slug>" — matches getSubcatsFor().
+function rcAguaSubcat(label) {
+  if (!label) return null;
+  const t = String(label).trim();
+  if (!t) return null;
+  const tl = t.toLowerCase();
+  if (tl === "potable")    return "potable";
+  if (tl === "gris")       return "gris";
+  if (tl === "industrial") return "industrial";
+  return "otro:" + tl.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
 function rcNum(v) {
   if (v == null || v === "") return 0;
   if (typeof v === "number") return v;
@@ -119,11 +132,14 @@ async function rcReadAllRecords() {
 
   ((data.Combustible || []).slice(1)).forEach(function (row, i) {
     const link = row[0], fecha = row[1], consumo = row[2], costo = row[3];
-    const sucursal = row[5], tipo = row[6], proveedor = row[7];
+    const sucursal = row[5], tipo = row[6], proveedor = row[7], estadoLbl = row[8];
     if (!fecha && !consumo) return;
     const subcat = rcCombSubcat(tipo);
     records.push({
       id: "comb-" + i,
+      _sheetName: "Combustible",
+      _sheetRow: i + 2,
+      _estadoCol: 9,
       date: rcParseDate(fecha),
       sucursal: sucursal || "",
       type: "combustible",
@@ -133,16 +149,20 @@ async function rcReadAllRecords() {
       unit: (subcat === "glp" || subcat === "gas-natural") ? "kg" : "L",
       costo: rcNum(costo),
       origen: "sheets",
+      estado: rcEstadoValue(estadoLbl),
       _driveLink: link || "",
     });
   });
 
   ((data.Electricidad || []).slice(1)).forEach(function (row, i) {
     const link = row[0], numCli = row[1], fecha = row[2], consumo = row[3];
-    const costo = row[4], sucursal = row[6], proveedor = row[8];
+    const costo = row[4], sucursal = row[6], proveedor = row[8], estadoLbl = row[9];
     if (!fecha && !consumo) return;
     records.push({
       id: "elec-" + i,
+      _sheetName: "Electricidad",
+      _sheetRow: i + 2,
+      _estadoCol: 10,
       date: rcParseDate(fecha),
       sucursal: sucursal || "",
       type: "electricidad",
@@ -152,6 +172,7 @@ async function rcReadAllRecords() {
       unit: "kWh",
       costo: rcNum(costo),
       origen: "sheets",
+      estado: rcEstadoValue(estadoLbl),
       numeroCliente: numCli || "",
       _driveLink: link || "",
     });
@@ -159,19 +180,23 @@ async function rcReadAllRecords() {
 
   ((data.Agua || []).slice(1)).forEach(function (row, i) {
     const link = row[0], numCli = row[1], fecha = row[2], consumo = row[3];
-    const costo = row[4], sucursal = row[6], proveedor = row[8];
+    const costo = row[4], sucursal = row[6], proveedor = row[8], subcatLbl = row[9], estadoLbl = row[10];
     if (!fecha && !consumo) return;
     records.push({
       id: "agua-" + i,
+      _sheetName: "Agua",
+      _sheetRow: i + 2,
+      _estadoCol: 11,
       date: rcParseDate(fecha),
       sucursal: sucursal || "",
       type: "agua",
-      subcat: null,
+      subcat: rcAguaSubcat(subcatLbl),
       provider: proveedor || "",
       cantidad: rcNum(consumo),
       unit: "m³",
       costo: rcNum(costo),
       origen: "sheets",
+      estado: rcEstadoValue(estadoLbl),
       numeroCliente: numCli || "",
       _driveLink: link || "",
     });
@@ -210,6 +235,15 @@ function endOfMonth(iso) {
   const last = new Date(y, m, 0).getDate();
   return String(last).padStart(2, "0") + "/" + String(m).padStart(2, "0") + "/" + y;
 }
+function rcEstadoLabel(estado) {
+  return estado === "eliminada" ? "Eliminada" : "Activa";
+}
+function rcEstadoValue(label) {
+  if (!label) return "activa";
+  const t = String(label).trim().toLowerCase();
+  return t === "eliminada" || t === "eliminado" ? "eliminada" : "activa";
+}
+
 function rowsByType(records) {
   const byType = { combustible: [], electricidad: [], agua: [] };
   for (const r of records) {
@@ -223,6 +257,7 @@ function rowsByType(records) {
         r.sucursal,
         r.subcat ? subcatLabel(r.type, r.subcat) : "Petróleo Diesel",
         r.provider || "",
+        rcEstadoLabel(r.estado),
       ]);
     } else if (r.type === "electricidad") {
       byType.electricidad.push([
@@ -235,6 +270,7 @@ function rowsByType(records) {
         r.sucursal,
         "⚡Energía kWh",
         r.provider || "Enel",
+        rcEstadoLabel(r.estado),
       ]);
     } else if (r.type === "agua") {
       byType.agua.push([
@@ -247,6 +283,8 @@ function rowsByType(records) {
         r.sucursal,
         "💧Agua m3",
         r.provider || "Aguas Andinas",
+        r.subcat ? subcatLabel("agua", r.subcat) : "",
+        rcEstadoLabel(r.estado),
       ]);
     }
   }
@@ -367,6 +405,46 @@ async function rcHandleConfirm(ev) {
 }
 window.addEventListener("rc:confirm", rcHandleConfirm);
 
+// ----- Inline edit sync ---------------------------------------------------
+// id format from rcReadAllRecords: "comb-{i}" / "elec-{i}" / "agua-{i}",
+// where i is the 0-based index AFTER the header row. Sheet row (1-based)
+// = i + 2. Columns (1-based) match the layouts in CONFIG.HEADERS:
+//   Combustible  → Consumo=3, Costo=4
+//   Electricidad → Consumo total=4, Costo=5
+//   Agua         → Consumo total=4, Costo=5
+function rcResolveSheetCell(id, field) {
+  const m = /^(comb|elec|agua)-(\d+)$/.exec(id || "");
+  if (!m) return null;
+  const kind = m[1];
+  const row = parseInt(m[2], 10) + 2;
+  const COLS = {
+    comb: { cantidad: 3, costo: 4, estado: 9,  sheet: RC_CONFIG.SHEETS.COMBUSTIBLE },
+    elec: { cantidad: 4, costo: 5, estado: 10, sheet: RC_CONFIG.SHEETS.ELECTRICIDAD },
+    agua: { cantidad: 4, costo: 5, estado: 11, sheet: RC_CONFIG.SHEETS.AGUA },
+  }[kind];
+  if (!COLS || !COLS[field]) return null;
+  return { sheet: COLS.sheet, row, col: COLS[field] };
+}
+
+async function rcHandleEdit(ev) {
+  const { id, field, value } = ev.detail || {};
+  if (!rcEndpointConfigured()) return;
+  const target = rcResolveSheetCell(id, field);
+  if (!target) {
+    console.warn("[rc-sync] edit ignored — record not from sheets:", id, field);
+    return;
+  }
+  try {
+    await rcApiPost({ action: "update", sheet: target.sheet, row: target.row, col: target.col, value });
+    console.log("[rc-sync] cell updated", target, "=", value);
+    window.dispatchEvent(new CustomEvent("rc:edit-done", { detail: { ok: true } }));
+  } catch (e) {
+    console.error("[rc-sync] cell update failed", e);
+    window.dispatchEvent(new CustomEvent("rc:edit-done", { detail: { ok: false, msg: e.message } }));
+  }
+}
+window.addEventListener("rc:edit", rcHandleEdit);
+
 // ----- React helpers ------------------------------------------------------
 
 // Bootstrap: cargar registros desde Sheets al iniciar.
@@ -393,7 +471,7 @@ const SyncToaster = () => {
           type: "TOAST/SHOW",
           toast: {
             kind: "success",
-            title: "Sincronizado con Google Sheets",
+            title: "Sincronizado",
             body: d.written + " fila" + (d.written !== 1 ? "s" : "") + " escrita" + (d.written !== 1 ? "s" : "") + ".",
           },
         });
@@ -460,24 +538,13 @@ const SyncStatus = () => {
           <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       )}
-      <span>{status.kind === "loading" ? "Escribiendo en Google Sheets…" : status.msg}</span>
+      <span>{status.kind === "loading" ? "Guardando…" : status.msg}</span>
     </div>
   );
 };
 
-// Link de acceso rápido al spreadsheet (reemplaza el viejo UserChip).
-const SheetLink = () => (
-  <div className="rc-userchip" title="Spreadsheet">
-    <a className="rc-sheet-link" href={RC_CONFIG.SPREADSHEET_URL} target="_blank" rel="noopener" title="Abrir Spreadsheet">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-        <polyline points="15 3 21 3 21 9"/>
-        <line x1="10" y1="14" x2="21" y2="3"/>
-      </svg>
-      Abrir Sheet
-    </a>
-  </div>
-);
+// Placeholder — el link al spreadsheet ya no se expone al usuario final.
+const SheetLink = () => null;
 
 Object.assign(window, {
   StoreBridge, SyncBootstrap, SyncToaster, SyncStatus, SheetLink, RC_CONFIG,

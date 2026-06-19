@@ -28,12 +28,16 @@ const Landing = () => {
         borderRadius: 999,
         gap: 14,
       }}>
-        <span className="prt-row" style={{ gap: 6 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--rl-success-500)" }}></span>
-          <span style={{ font: "600 13px/1 var(--rl-font-display)" }}>{COMPANY}</span>
-        </span>
-        <span style={{ width: 1, height: 14, background: "var(--rl-gray-300)" }}></span>
-        <span style={{ font: "600 13px/1 var(--rl-font-display)" }}>Marzo 2026</span>
+        {COMPANY && (
+          <>
+            <span className="prt-row" style={{ gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: "var(--rl-success-500)" }}></span>
+              <span style={{ font: "600 13px/1 var(--rl-font-display)" }}>{COMPANY}</span>
+            </span>
+            <span style={{ width: 1, height: 14, background: "var(--rl-gray-300)" }}></span>
+          </>
+        )}
+        <span style={{ font: "600 13px/1 var(--rl-font-display)" }}>{monthLabelShort(CURRENT_MONTH_KEY).replace(/\b(\w)/, c => c.toUpperCase())}</span>
         <span style={{ width: 1, height: 14, background: "var(--rl-gray-300)" }}></span>
         <span className="prt-hint">{recordsMonth} registros este mes{pendingDocs ? ` · ${pendingDocs} pendientes` : ""}</span>
       </div>
@@ -109,9 +113,28 @@ const Landing = () => {
         </Btn>
       </div>
 
-      <div className="prt-hint" style={{ fontSize: 11, color: "var(--rl-gray-400)" }}>
-        Última actividad · 28 feb 2026 · Combustible Diésel — Planta Norte
+      {/* Tertiary access — onboarding */}
+      <div style={{ width: "100%", maxWidth: 720, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="prt-row" style={{ gap: 10 }}>
+          <span style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: "var(--rl-gray-50)",
+            border: "1px solid var(--rl-gray-200)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "var(--rl-gray-600)",
+          }}><Icon name="tune" size={18} /></span>
+          <div>
+            <div style={{ font: "600 13px/18px var(--rl-font-display)", color: "var(--rl-gray-900)" }}>
+              ¿Vas a configurar un proyecto nuevo?
+            </div>
+            <div className="prt-hint" style={{ fontSize: 12 }}>Define sucursales e ítems a registrar en 3 pasos.</div>
+          </div>
+        </div>
+        <Btn kind="ghost" iconRight="arrow_forward" onClick={() => dispatch({ type: "NAVIGATE", view: "onboarding" })}>
+          Crear proyecto
+        </Btn>
       </div>
+
     </div>
   );
 };

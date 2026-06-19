@@ -4,9 +4,12 @@
 // Selectors / aggregators
 // ============================================================
 function selectFilteredRecords(state) {
-  const { sucursal, period, typeTab, subcat } = state.dashFilters;
+  const { sucursal, period, typeTab, subcat, estado } = state.dashFilters;
   const monthKeys = new Set(periodToMonthKeys(period));
   return state.records.filter(r => {
+    if (estado === "activa" && r.estado === "eliminada") return false;
+    if (estado === "eliminada" && r.estado !== "eliminada") return false;
+    // estado === "all" → don't filter by estado
     if (sucursal !== "all" && r.sucursal !== sucursal) return false;
     const mk = r.date.slice(0, 7);
     if (!monthKeys.has(mk)) return false;
@@ -16,14 +19,28 @@ function selectFilteredRecords(state) {
   });
 }
 
+// Records eliminadas NEVER count in totals, charts or KPIs — even if the user is
+// viewing them via the "Todas" filter. The detail table is the only place that can
+// show them.
+function isInScope(r, state, { ignoreSubcat = false } = {}) {
+  if (r.estado === "eliminada") return false;
+  const { sucursal, typeTab, subcat } = state.dashFilters;
+  if (sucursal !== "all" && r.sucursal !== sucursal) return false;
+  if (typeTab !== "all" && r.type !== typeTab) return false;
+  if (!ignoreSubcat && typeTab === r.type && subcat !== "all" && r.subcat !== subcat) return false;
+  return true;
+}
+
 function kpiAggregates(state) {
-  // current period filtered
-  const filtered = selectFilteredRecords(state);
+  // Aggregators always exclude eliminada records — even if the user is viewing
+  // them via the "Todas" / "Solo eliminadas" filter. They're never counted in totals.
+  const filtered = selectFilteredRecords(state).filter(r => r.estado !== "eliminada");
   const curMonth = CURRENT_MONTH_KEY;
   const curMonthRecs = filtered.filter(r => r.date.startsWith(curMonth));
   const prevMonth = PREV_MONTH_KEY;
   // For "vs prev" we always look at same scope but prev month
   const allInScope = state.records.filter(r => {
+    if (r.estado === "eliminada") return false;
     const { sucursal, typeTab, subcat } = state.dashFilters;
     if (sucursal !== "all" && r.sucursal !== sucursal) return false;
     if (typeTab !== "all" && r.type !== typeTab) return false;
@@ -50,7 +67,7 @@ function kpiAggregates(state) {
     qtyCur, qtyDelta,
     costCur, costDelta,
     sucCount: sucReporting.size,
-    totalSuc: SUCURSALES.length,
+    totalSuc: activeSucNames(state).length,
     recordsInPeriod: filtered.length,
   };
 }
@@ -60,11 +77,12 @@ function chartDataByMonthAndSubcat(state) {
   const { typeTab, period } = state.dashFilters;
   const monthKeys = periodToMonthKeys(period);
   const type = TYPES[typeTab];
-  const subs = INITIAL_SUBCATS[typeTab];
+  const subs = getSubcatsFor(state, typeTab);
 
   // Records filtered by sucursal + type (NOT by subcat — we plot all)
   const { sucursal } = state.dashFilters;
   const recs = state.records.filter(r => {
+    if (r.estado === "eliminada") return false;
     if (r.type !== typeTab) return false;
     if (sucursal !== "all" && r.sucursal !== sucursal) return false;
     const mk = r.date.slice(0, 7);
@@ -99,13 +117,14 @@ function heatmapData(state) {
   const { typeTab, period, subcat } = state.dashFilters;
   const monthKeys = periodToMonthKeys(period);
   const recs = state.records.filter(r => {
+    if (r.estado === "eliminada") return false;
     if (r.type !== typeTab) return false;
     const mk = r.date.slice(0, 7);
     if (!monthKeys.includes(mk)) return false;
     if (subcat !== "all" && r.subcat !== subcat) return false;
     return true;
   });
-  const rows = SUCURSALES.map(suc => ({
+  const rows = activeSucNames(state).map(suc => ({
     suc,
     cells: monthKeys.map(mk => recs.filter(r => r.sucursal === suc && r.date.startsWith(mk)).reduce((a, r) => a + r.cantidad, 0)),
   }));
@@ -321,8 +340,14 @@ const Heatmap = ({ months: monthArr, rows, color, unit }) => {
 // ============================================================
 // Sub-components
 // ============================================================
-const KpiCard = ({ label, value, unit, icon, color, bg, delta, deltaKind, sub }) => (
-  <div className="prt-kpi">
+const KpiCard = ({ label, value, unit, icon, color, bg, delta, deltaKind, sub, secondary, onClick, footer }) => (
+  <div
+    className={"prt-kpi" + (onClick ? " prt-kpi-clickable" : "")}
+    onClick={onClick}
+    role={onClick ? "button" : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+  >
     <div className="prt-kpi-head">
       <span className="prt-kpi-label">{label}</span>
       <span className="prt-kpi-ico" style={{ background: bg, color }}><Icon name={icon} size={22} /></span>
@@ -331,8 +356,11 @@ const KpiCard = ({ label, value, unit, icon, color, bg, delta, deltaKind, sub })
       <span>{value}</span>
       {unit && <span className="unit">{unit}</span>}
     </div>
+    {secondary && (
+      <div className="prt-hint" style={{ fontSize: 12, marginTop: 2 }}>{secondary}</div>
+    )}
     {(delta != null || sub) && (
-      <div className="prt-row" style={{ gap: 8, flexWrap: "wrap" }}>
+      <div className="prt-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 4 }}>
         {delta != null && (
           <span className={"prt-kpi-delta " + (deltaKind || "neutral")}>
             <Icon name={deltaKind === "up" ? "trending_up" : deltaKind === "dn" ? "trending_down" : "trending_flat"} size={13} />
@@ -341,6 +369,12 @@ const KpiCard = ({ label, value, unit, icon, color, bg, delta, deltaKind, sub })
         )}
         {sub && <span className="prt-hint" style={{ fontSize: 11 }}>{sub}</span>}
       </div>
+    )}
+    {footer && (
+      <>
+        <div className="prt-kpi-divider" />
+        <div className="prt-kpi-footer">{footer}</div>
+      </>
     )}
   </div>
 );
@@ -354,7 +388,7 @@ const TypeTabs = () => {
   const totals = {};
   Object.keys(TYPES).forEach(k => {
     const sum = state.records
-      .filter(r => r.type === k && monthKeys.has(r.date.slice(0,7)) && (sucursal === "all" || r.sucursal === sucursal))
+      .filter(r => r.estado !== "eliminada" && r.type === k && monthKeys.has(r.date.slice(0,7)) && (sucursal === "all" || r.sucursal === sucursal))
       .reduce((a, r) => a + r.cantidad, 0);
     totals[k] = sum;
   });
@@ -386,7 +420,7 @@ const TypeTabs = () => {
 const SubcatPills = () => {
   const { state, dispatch } = useApp();
   const { typeTab, subcat } = state.dashFilters;
-  const subs = state.subcategories[typeTab] || [];
+  const subs = getSubcatsFor(state, typeTab);
   if (subs.length === 0) {
     return (
       <div className="prt-subcat-bar">
@@ -438,44 +472,23 @@ const DashFilterBar = () => {
   return (
     <div className="prt-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
       <select className="prt-select" style={{ width: 220 }} value={f.sucursal} onChange={e => set("sucursal", e.target.value)}>
-        <option value="all">Todas las sucursales ({SUCURSALES.length})</option>
-        {SUCURSALES.map(s => <option key={s} value={s}>{s}</option>)}
+        <option value="all">Todas las sucursales ({activeSucNames(state).length})</option>
+        {activeSucNames(state).map(s => <option key={s} value={s}>{s}</option>)}
       </select>
       <select className="prt-select" style={{ width: 200 }} value={f.period} onChange={e => set("period", e.target.value)}>
         <option value="12m">Últimos 12 meses</option>
         <option value="6m">Últimos 6 meses</option>
         <option value="3m">Últimos 3 meses</option>
-        <option value="1m">Marzo 2026</option>
+        <option value="1m">{periodLabel("1m")}</option>
       </select>
       <Btn size="sm" kind="ghost" icon="filter_alt_off" onClick={() => {
         set("sucursal", "all"); set("period", "12m"); set("subcat", "all");
       }}>Limpiar filtros</Btn>
-      <div style={{ marginLeft: "auto" }} className="prt-row" >
-        <span className="prt-hint" style={{ fontSize: 11 }}>Actualizado 09:14</span>
-        <Chip kind="success" size="sm" icon="check">Sincronizado</Chip>
-      </div>
     </div>
   );
 };
 
-const InsightCallout = () => {
-  const { dispatch } = useApp();
-  const [dismissed, setDismissed] = React.useState(false);
-  if (dismissed) return null;
-  return (
-    <div className="prt-callout" style={{ marginBottom: 18 }}>
-      <span className="badge">IA</span>
-      <div className="prt-grow">
-        <div className="ttl">Combustible bajó <strong style={{ color: "var(--rl-success-700)" }}>2,1%</strong> este mes — el descenso viene principalmente de Planta Norte.</div>
-        <div className="sub">Hay 1 documento con error en Bodega RM que aún no se contabiliza.</div>
-      </div>
-      <Btn size="sm" kind="ghost" iconRight="arrow_forward">Ver detalles</Btn>
-      <button onClick={() => setDismissed(true)} style={{ all: "unset", cursor: "pointer", color: "var(--rl-gray-500)", padding: 4 }}>
-        <Icon name="close" size={18} />
-      </button>
-    </div>
-  );
-};
+const InsightCallout = () => null;
 
 // ============================================================
 // Recent records table — inline edit + undo
@@ -483,9 +496,32 @@ const InsightCallout = () => {
 const RecentTable = () => {
   const { state, dispatch } = useApp();
   const [editing, setEditing] = React.useState(null); // { id, field }
-  const rows = selectFilteredRecords(state)
+  const [confirmModal, setConfirmModal] = React.useState(null); // { action, rec }
+  const allFiltered = selectFilteredRecords(state);
+  const rows = [...allFiltered]
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 8);
+    .slice(0, 12);
+
+  const handleDelete = (rec) => setConfirmModal({ action: "delete", rec });
+  const handleRestore = (rec) => setConfirmModal({ action: "restore", rec });
+  const confirmDelete = () => {
+    const rec = confirmModal.rec;
+    dispatch({ type: "DASH/DELETE_RECORD", id: rec.id });
+    if (rec.origen === "sheets") {
+      try { window.dispatchEvent(new CustomEvent("rc:edit", { detail: { id: rec.id, field: "estado", value: "Eliminada" } })); } catch (e) {}
+    }
+    dispatch({ type: "TOAST/SHOW", toast: { kind: "success", title: "Registro eliminado", body: 'Se marcó como eliminado. Puedes restaurarlo desde el filtro "Solo eliminadas".' } });
+    setConfirmModal(null);
+  };
+  const confirmRestore = () => {
+    const rec = confirmModal.rec;
+    dispatch({ type: "DASH/RESTORE_RECORD", id: rec.id });
+    if (rec.origen === "sheets") {
+      try { window.dispatchEvent(new CustomEvent("rc:edit", { detail: { id: rec.id, field: "estado", value: "Activa" } })); } catch (e) {}
+    }
+    dispatch({ type: "TOAST/SHOW", toast: { kind: "success", title: "Registro restaurado", body: "El registro está activo y se incluye nuevamente en los cálculos." } });
+    setConfirmModal(null);
+  };
 
   const startEdit = (id, field) => setEditing({ id, field });
   const commitEdit = (id, field, value) => {
@@ -495,6 +531,7 @@ const RecentTable = () => {
     if (isNaN(parsed)) { setEditing(null); return; }
     if (rec[field] === parsed) { setEditing(null); return; }
     dispatch({ type: "DASH/EDIT_RECORD", id, patch: { [field]: parsed } });
+    try { window.dispatchEvent(new CustomEvent("rc:edit", { detail: { id, field, value: parsed } })); } catch(e) {}
     dispatch({ type: "TOAST/SHOW", toast: {
       kind: "success",
       title: field === "cantidad" ? "Cantidad actualizada" : "Costo actualizado",
@@ -512,10 +549,31 @@ const RecentTable = () => {
           <div className="prt-hint" style={{ marginTop: 2 }}>Edita una celda haciendo clic. Los cambios se guardan al instante (con opción de deshacer).</div>
         </div>
         <div className="prt-row" style={{ gap: 8 }}>
-          <Chip size="sm">{rows.length} de {selectFilteredRecords(state).length}</Chip>
+          <select className="prt-select" style={{ width: 160, height: 32, fontSize: 13 }}
+            value={state.dashFilters.estado}
+            onChange={e => dispatch({ type: "DASH/SET_FILTER", key: "estado", value: e.target.value })}
+          >
+            <option value="activa">Solo activas</option>
+            <option value="eliminada">Solo eliminadas</option>
+            <option value="all">Todas</option>
+          </select>
+          <Chip size="sm">{rows.length} de {allFiltered.length}</Chip>
           <Btn size="sm" icon="open_in_new">Ver todo</Btn>
         </div>
       </div>
+
+      {state.dashFilters.estado === "all" && (
+        <div style={{
+          padding: "8px 22px", background: "var(--rl-warning-50)",
+          borderBottom: "1px solid var(--rl-warning-100)",
+          display: "flex", alignItems: "center", gap: 6,
+          font: "500 12px/1.4 var(--rl-font-body)", color: "var(--rl-warning-700)",
+        }}>
+          <Icon name="info" size={14} />
+          Los registros eliminados se muestran pero no se incluyen en los totales del dashboard.
+        </div>
+      )}
+
       <div style={{ overflowX: "auto" }}>
         <table className="prt-table">
           <thead>
@@ -528,48 +586,114 @@ const RecentTable = () => {
               <th className="num">Cantidad</th>
               <th className="num">Costo (CLP)</th>
               <th>Origen</th>
+              <th>Estado</th>
+              <th style={{ width: 48 }}></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <tr key={r.id} className={"editable" + (state.recentlyEdited === r.id ? " row-just-saved" : "")}>
-                <td>{fmtDate(r.date)}</td>
-                <td>{r.sucursal}</td>
-                <td><TypeIndicator type={r.type} withLabel /></td>
-                <td>{r.subcat ? <Chip>{subcatLabel(r.type, r.subcat)}</Chip> : <span className="prt-hint">—</span>}</td>
-                <td>{r.provider}</td>
-                <td
-                  className={"num" + (editing && editing.id === r.id && editing.field === "cantidad" ? " cell-edit" : "")}
-                  onClick={() => startEdit(r.id, "cantidad")}
-                  style={{ cursor: "pointer" }}
-                >
-                  {editing && editing.id === r.id && editing.field === "cantidad"
-                    ? <EditCell defaultValue={r.cantidad} onCommit={(v) => commitEdit(r.id, "cantidad", v)} onCancel={() => setEditing(null)} align="right" />
-                    : <span><strong>{fmtNum(r.cantidad)}</strong> <span className="prt-hint">{r.unit}</span></span>}
-                </td>
-                <td
-                  className={"num" + (editing && editing.id === r.id && editing.field === "costo" ? " cell-edit" : "")}
-                  onClick={() => startEdit(r.id, "costo")}
-                  style={{ cursor: "pointer" }}
-                >
-                  {editing && editing.id === r.id && editing.field === "costo"
-                    ? <EditCell defaultValue={r.costo} onCommit={(v) => commitEdit(r.id, "costo", v)} onCancel={() => setEditing(null)} align="right" />
-                    : fmtCLP(r.costo)}
-                </td>
-                <td>
-                  {r.origen === "pdf" && <Chip size="sm" icon="picture_as_pdf">PDF</Chip>}
-                  {r.origen === "manual" && <Chip size="sm" icon="edit">Manual</Chip>}
-                </td>
-              </tr>
-            ))}
+            {rows.map(r => {
+              const isDel = r.estado === "eliminada";
+              return (
+                <tr key={r.id} className={
+                  "editable"
+                  + (state.recentlyEdited === r.id ? " row-just-saved" : "")
+                  + (isDel ? " row-deleted" : "")
+                }>
+                  <td className={isDel ? "td-del" : ""}>{fmtDate(r.date)}</td>
+                  <td className={isDel ? "td-del" : ""}>{r.sucursal}</td>
+                  <td><TypeIndicator type={r.type} withLabel /></td>
+                  <td className={isDel ? "td-del" : ""}>{r.subcat ? <Chip>{subcatLabel(r.type, r.subcat)}</Chip> : <span className="prt-hint">—</span>}</td>
+                  <td className={isDel ? "td-del" : ""}>{r.provider}</td>
+                  <td
+                    className={"num" + (isDel ? " td-del" : "") + (editing && editing.id === r.id && editing.field === "cantidad" ? " cell-edit" : "")}
+                    onClick={() => !isDel && startEdit(r.id, "cantidad")}
+                    style={{ cursor: isDel ? "default" : "pointer" }}
+                  >
+                    {editing && editing.id === r.id && editing.field === "cantidad"
+                      ? <EditCell defaultValue={r.cantidad} onCommit={(v) => commitEdit(r.id, "cantidad", v)} onCancel={() => setEditing(null)} align="right" />
+                      : <span><strong>{fmtNum(r.cantidad)}</strong> <span className="prt-hint">{r.unit}</span></span>}
+                  </td>
+                  <td
+                    className={"num" + (isDel ? " td-del" : "") + (editing && editing.id === r.id && editing.field === "costo" ? " cell-edit" : "")}
+                    onClick={() => !isDel && startEdit(r.id, "costo")}
+                    style={{ cursor: isDel ? "default" : "pointer" }}
+                  >
+                    {editing && editing.id === r.id && editing.field === "costo"
+                      ? <EditCell defaultValue={r.costo} onCommit={(v) => commitEdit(r.id, "costo", v)} onCancel={() => setEditing(null)} align="right" />
+                      : fmtCLP(r.costo)}
+                  </td>
+                  <td>
+                    {r.origen === "pdf" && <Chip size="sm" icon="picture_as_pdf">PDF</Chip>}
+                    {r.origen === "manual" && <Chip size="sm" icon="edit">Manual</Chip>}
+                    {r.origen === "sheets" && <Chip size="sm" icon="cloud">Importado</Chip>}
+                  </td>
+                  <td>
+                    {isDel
+                      ? <Chip kind="error" size="sm">Eliminada</Chip>
+                      : <Chip kind="success" size="sm">Activa</Chip>}
+                  </td>
+                  <td style={{ textAlign: "center", padding: "0 4px" }}>
+                    {isDel ? (
+                      <button className="ob-icon-btn sm" title="Restaurar registro"
+                        onClick={e => { e.stopPropagation(); handleRestore(r); }}
+                        style={{ color: "var(--rl-success-500)" }}
+                      ><Icon name="refresh" size={15} /></button>
+                    ) : (
+                      <button className="ob-icon-btn sm" title="Eliminar registro"
+                        onClick={e => { e.stopPropagation(); handleDelete(r); }}
+                        style={{ color: "var(--rl-gray-400)" }}
+                      ><Icon name="delete" size={15} /></button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {rows.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 32, textAlign: "center", color: "var(--rl-gray-500)" }}>
+              <tr><td colSpan={10} style={{ padding: 32, textAlign: "center", color: "var(--rl-gray-500)" }}>
                 No hay registros que coincidan con los filtros actuales.
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {confirmModal?.action === "delete" && (
+        <ConfirmDialog
+          icon="delete" iconBg="var(--rl-error-50)" iconColor="var(--rl-error-500)"
+          title="¿Eliminar este registro?"
+          description="Quedará marcado como eliminado y no se incluirá en los cálculos del dashboard, pero podrás restaurarlo más adelante."
+          detail={
+            <div>
+              <div><strong>{confirmModal.rec.sucursal}</strong> · {TYPES[confirmModal.rec.type].label}</div>
+              <div>{fmtDate(confirmModal.rec.date)} · {fmtNum(confirmModal.rec.cantidad)} {confirmModal.rec.unit} · {fmtCLP(confirmModal.rec.costo)}</div>
+            </div>
+          }
+          actions={<>
+            <Btn onClick={() => setConfirmModal(null)}>Cancelar</Btn>
+            <Btn kind="danger" icon="delete" onClick={confirmDelete}>Eliminar</Btn>
+          </>}
+          onClose={() => setConfirmModal(null)}
+        />
+      )}
+
+      {confirmModal?.action === "restore" && (
+        <ConfirmDialog
+          icon="refresh" iconBg="var(--rl-success-50)" iconColor="var(--rl-success-700)"
+          title="¿Restaurar este registro?"
+          description="Volverá a estar activo y se incluirá nuevamente en los cálculos del dashboard."
+          detail={
+            <div>
+              <div><strong>{confirmModal.rec.sucursal}</strong> · {TYPES[confirmModal.rec.type].label}</div>
+              <div>{fmtDate(confirmModal.rec.date)} · {fmtNum(confirmModal.rec.cantidad)} {confirmModal.rec.unit} · {fmtCLP(confirmModal.rec.costo)}</div>
+            </div>
+          }
+          actions={<>
+            <Btn onClick={() => setConfirmModal(null)}>Cancelar</Btn>
+            <Btn kind="primary" icon="check" onClick={confirmRestore}>Restaurar</Btn>
+          </>}
+          onClose={() => setConfirmModal(null)}
+        />
+      )}
     </Card>
   );
 };
@@ -610,17 +734,25 @@ const Dashboard = () => {
   const chart = chartDataByMonthAndSubcat(state);
   const heat = heatmapData(state);
   const filtered = selectFilteredRecords(state);
+  // For aggregations, always exclude eliminada (the detail table is the only place we show them).
+  const filteredActive = filtered.filter(r => r.estado !== "eliminada");
 
-  // For the "active type KPI" we want the active type total in current month
+  // For the "active type KPI" we want both: total in the SELECTED PERIOD (primary)
+  // and total in current month (secondary), plus delta current-month vs previous-month.
   const curMonth = CURRENT_MONTH_KEY;
   const prevMonth = PREV_MONTH_KEY;
-  const activeTypeCur = state.records
-    .filter(r => r.type === state.dashFilters.typeTab && r.date.startsWith(curMonth) && (state.dashFilters.sucursal === "all" || r.sucursal === state.dashFilters.sucursal) && (state.dashFilters.subcat === "all" || r.subcat === state.dashFilters.subcat))
-    .reduce((a, r) => a + r.cantidad, 0);
-  const activeTypePrev = state.records
-    .filter(r => r.type === state.dashFilters.typeTab && r.date.startsWith(prevMonth) && (state.dashFilters.sucursal === "all" || r.sucursal === state.dashFilters.sucursal) && (state.dashFilters.subcat === "all" || r.subcat === state.dashFilters.subcat))
-    .reduce((a, r) => a + r.cantidad, 0);
+  const inScope = (r) => r.estado !== "eliminada"
+    && r.type === state.dashFilters.typeTab
+    && (state.dashFilters.sucursal === "all" || r.sucursal === state.dashFilters.sucursal)
+    && (state.dashFilters.subcat === "all" || r.subcat === state.dashFilters.subcat);
+  const activeTypePeriod = filteredActive.filter(r => r.type === state.dashFilters.typeTab).reduce((a, r) => a + r.cantidad, 0);
+  const activeTypeCur = state.records.filter(r => inScope(r) && r.date.startsWith(curMonth)).reduce((a, r) => a + r.cantidad, 0);
+  const activeTypePrev = state.records.filter(r => inScope(r) && r.date.startsWith(prevMonth)).reduce((a, r) => a + r.cantidad, 0);
   const activeTypeDelta = activeTypePrev > 0 ? ((activeTypeCur - activeTypePrev) / activeTypePrev) * 100 : 0;
+
+  // Cost: same shape — period primary, this-month secondary, delta vs prev month.
+  const costPeriod = filteredActive.reduce((a, r) => a + (r.costo || 0), 0);
+  const prevMonthLabel = monthLabelShort(PREV_MONTH_KEY);
 
   return (
     <div>
@@ -632,7 +764,7 @@ const Dashboard = () => {
             icon={state.recordsLoading ? "" : "refresh"}
             onClick={() => window.rcRefreshDashboard && window.rcRefreshDashboard()}
             disabled={state.recordsLoading}
-            title={state.recordsLastFetch ? "Última carga: " + new Date(state.recordsLastFetch).toLocaleTimeString("es-CL") : "Cargar datos desde Sheets"}
+            title={state.recordsLastFetch ? "Última carga: " + new Date(state.recordsLastFetch).toLocaleTimeString("es-CL") : "Cargar datos"}
           >
             {state.recordsLoading
               ? <><span className="prt-spinner" style={{ marginRight: 6 }}/>Cargando…</>
@@ -654,24 +786,28 @@ const Dashboard = () => {
       {/* KPI row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 18 }}>
         <KpiCard
-          label={`${tt.label} este mes`}
-          value={fmtNum(activeTypeCur)} unit={tt.unit}
+          label={`${tt.label} en periodo`}
+          value={fmtNum(activeTypePeriod)} unit={tt.unit}
           icon={tt.icon} color={tt.color} bg={tt.bg}
+          secondary={`${fmtNum(activeTypeCur)} ${tt.unit} este mes`}
           delta={activeTypeDelta} deltaKind={activeTypeDelta < 0 ? "dn" : activeTypeDelta > 1 ? "up" : "neutral"}
-          sub="vs. feb 2026"
+          sub={`vs. ${prevMonthLabel}`}
         />
         <KpiCard
-          label="Costo total mes"
-          value={fmtCLP(kpis.costCur)}
+          label="Costo total periodo"
+          value={fmtCLP(costPeriod)}
           icon="payments" color="var(--rl-primary-900)" bg="var(--rl-primary-50)"
+          secondary={`${fmtCLP(kpis.costCur)} este mes`}
           delta={kpis.costDelta} deltaKind={kpis.costDelta < 0 ? "dn" : "up"}
-          sub="todos los tipos · CLP"
+          sub={`vs. ${prevMonthLabel} · CLP`}
         />
         <KpiCard
           label="Sucursales al día"
           value={kpis.sucCount} unit={`/ ${kpis.totalSuc}`}
           icon="apartment" color="var(--rl-success-700)" bg="var(--rl-success-50)"
           sub={kpis.sucCount === kpis.totalSuc ? "Todas reportaron" : `${kpis.totalSuc - kpis.sucCount} sin reportar`}
+          onClick={() => dispatch({ type: "NAVIGATE", view: "matrix" })}
+          footer={<span className="prt-row" style={{ gap: 4, color: "var(--rl-primary-900)", fontWeight: 600 }}>Ver detalle <Icon name="arrow_forward" size={14} /></span>}
         />
         <KpiCard
           label="Registros en periodo"
@@ -737,10 +873,10 @@ const DashboardEmpty = () => {
       />
       <EmptyState
         icon="inbox"
-        title={state.recordsLoading ? "Cargando datos desde Google Sheets…" : "Aún no hay consumos registrados"}
+        title={state.recordsLoading ? "Cargando datos…" : "Aún no hay consumos registrados"}
         body={state.recordsLoading
-          ? "Leyendo las hojas Combustible, Electricidad y Agua del spreadsheet sandbox."
-          : "Cuando ingreses tu primer consumo (a mano o subiendo documentos), aquí verás KPIs, tendencias por tipo y la tabla detallada. Si ya hay datos en el Sheet, presiona 'Refrescar'."}
+          ? "Sincronizando registros de combustible, electricidad y agua."
+          : "Cuando ingreses tu primer consumo (a mano o subiendo documentos), aquí verás KPIs, tendencias por tipo y la tabla detallada. Si ya hay datos cargados, presiona 'Refrescar'."}
         actions={state.recordsLoading ? null : <>
           <Btn kind="primary" icon="edit" onClick={() => dispatch({ type: "NAVIGATE", view: "manual" })}>Registrar manualmente</Btn>
           <Btn icon="cloud_upload" onClick={() => dispatch({ type: "NAVIGATE", view: "upload" })}>Subir documento</Btn>

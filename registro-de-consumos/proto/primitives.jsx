@@ -111,16 +111,6 @@ const SectionHead = ({ eyebrow, title, sub, right }) => (
   </div>
 );
 
-// ---- Embed bar (iframe context) ----
-const EmbedBar = ({ host = "acme-corp.host" }) => (
-  <div className="prt-embed-bar">
-    <Icon name="open_in_new" size={14} />
-    <span>Módulo embebido en</span>
-    <strong style={{ color: "var(--rl-gray-700)" }}>{host}</strong>
-    <span className="right">Recylink · Consumos · iframe 1140 × auto</span>
-  </div>
-);
-
 // ---- Steps ----
 const Steps = ({ items, current }) => (
   <div className="prt-steps">
@@ -184,5 +174,5 @@ const ToastHost = () => {
 
 Object.assign(window, {
   Btn, Field, Input, Select, Chip, TypeIndicator,
-  Card, SectionHead, EmbedBar, Steps, EmptyState, ToastHost,
+  Card, SectionHead, Steps, EmptyState, ToastHost,
 });

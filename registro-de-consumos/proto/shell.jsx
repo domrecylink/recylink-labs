@@ -11,19 +11,9 @@ const Shell = () => {
 
   return (
     <div className="prt-app">
-      {/* Fake host browser window */}
-      <div className="prt-host">
-        <div className="prt-host-bar">
-          <span className="traffic"><span></span><span></span><span></span></span>
-          <span className="url">https://acme-corp.host/sustentabilidad/consumos</span>
-          <span style={{ color: "var(--rl-gray-500)" }}>Acme Corp</span>
-        </div>
-        <div className="prt-host-content">
-          <EmbedBar host="acme-corp.host" />
-          <ViewSwitcher />
-        </div>
+      <div className="prt-host-content">
+        <ViewSwitcher />
       </div>
-
       <NavHints />
       <ToastHost />
     </div>
@@ -33,11 +23,15 @@ const Shell = () => {
 const ViewSwitcher = () => {
   const { state } = useApp();
   switch (state.view) {
-    case "manual":    return <ManualView />;
-    case "upload":    return <UploadView />;
-    case "dashboard": return <DashboardView />;
+    case "manual":      return <ManualView />;
+    case "upload":      return <UploadView />;
+    case "dashboard":   return <DashboardView />;
+    case "onboarding":  return <OnboardingView />;
+    case "config":      return <ConfigView />;
+    case "config-edit": return <ConfigEditView />;
+    case "matrix":      return <UploadMatrixView />;
     case "landing":
-    default:          return <Landing />;
+    default:            return <Landing />;
   }
 };
 
@@ -46,10 +40,12 @@ const NavHints = () => {
   const { state, dispatch } = useApp();
   const go = (view, extra) => dispatch({ type: "NAVIGATE", view, ...extra });
   const items = [
-    { view: "landing",   label: "Inicio",      icon: "home" },
-    { view: "manual",    label: "Manual",      icon: "edit" },
-    { view: "upload",    label: "Subir",       icon: "cloud_upload" },
-    { view: "dashboard", label: "Dashboard",   icon: "dashboard" },
+    { view: "landing",    label: "Inicio",      icon: "home" },
+    { view: "manual",     label: "Manual",      icon: "edit" },
+    { view: "upload",     label: "Subir",       icon: "cloud_upload" },
+    { view: "dashboard",  label: "Dashboard",   icon: "dashboard" },
+    { view: "onboarding", label: "Onboarding",  icon: "tune" },
+    { view: "config",     label: "Config",      icon: "settings" },
   ];
   return (
     <div style={{

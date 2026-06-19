@@ -2,15 +2,8 @@
 // Pure in-memory — reload resets everything.
 
 // ----- Static catalog -----
-const COMPANY = "Acme Corp";
-const SUCURSALES = [
-  "Planta Norte",
-  "Planta Sur",
-  "CD Quilicura",
-  "Oficina Central",
-  "Bodega RM",
-  "Sucursal V",
-];
+const COMPANY = "";
+const SUCURSALES = [];
 
 const TYPES = {
   electricidad: { id: "electricidad", label: "Electricidad", unit: "kWh", icon: "bolt",          color: "var(--rl-primary-900)", bg: "var(--rl-primary-50)" },
@@ -39,6 +32,31 @@ const PROVIDERS = {
   agua:         ["Aguas Andinas", "Esval", "Essbio"],
 };
 
+// Fuel subcategory catalog — default + available units per combustible tipo
+const FUEL_SUBCATS_CATALOG = {
+  "diesel":         { label: "Petróleo Diésel", defaultUnit: "L",  units: ["L", "gal"] },
+  "kerosene":       { label: "Kerosene",        defaultUnit: "L",  units: ["L", "gal"] },
+  "gasolina":       { label: "Gasolina",        defaultUnit: "L",  units: ["L", "gal"] },
+  "fuel-oil":       { label: "Fuel Oil",        defaultUnit: "L",  units: ["L", "gal"] },
+  "glp":            { label: "GLP",             defaultUnit: "kg", units: ["kg", "L", "m³"] },
+  "lena":           { label: "Leña",            defaultUnit: "kg", units: ["kg", "t"] },
+  "pellets":        { label: "Pellets",         defaultUnit: "kg", units: ["kg", "t"] },
+  "astillas":       { label: "Astillas",        defaultUnit: "kg", units: ["kg", "t"] },
+  "carbon-vegetal": { label: "Carbón vegetal",   defaultUnit: "kg", units: ["kg", "t"] },
+  "briquetas":      { label: "Briquetas",       defaultUnit: "kg", units: ["kg", "t"] },
+  "gas-natural":    { label: "Gas Natural",     defaultUnit: "m³", units: ["m³", "kWh"] },
+};
+
+// ----- Sucursales config seed -----
+let __sucIdC = 0;
+const nextSucId = () => "suc" + (++__sucIdC);
+let __itemIdC = 0;
+const nextItemId = () => "itm" + (++__itemIdC);
+
+function seedConfigSucursales() {
+  return [];
+}
+
 // ----- Month window — last 12 months anchored to today (inclusive)
 const monthKey = (y, m) => `${y}-${String(m).padStart(2,"0")}`;
 const months = [];
@@ -60,97 +78,10 @@ const PREV_MONTH_KEY    = months[months.length - 2] || CURRENT_MONTH_KEY;
 let __idCounter = 1;
 const nextId = () => "r" + (__idCounter++);
 
-// Dummy seed disabled — all records come from Google Sheets at runtime via
-// rcRefreshDashboard(). The legacy generator below is kept for reference but
-// is no longer called from initialState.
-function _legacySeedRecords() {
-  const recs = [];
-  // Electricidad — every sucursal, every month
-  SUCURSALES.forEach((suc, si) => {
-    months.forEach((mo, mi) => {
-      const base = 8000 + ((si * 1700 + mi * 240) % 6000);
-      const noise = ((si * 7 + mi * 13) % 11) * 180;
-      recs.push({
-        id: nextId(),
-        date: mo + "-28",
-        sucursal: suc,
-        type: "electricidad",
-        subcat: null,
-        provider: si % 3 === 0 ? "Enel" : si % 3 === 1 ? "CGE" : "Saesa",
-        cantidad: Math.round((base + noise) / 10) * 10,
-        unit: "kWh",
-        costo: Math.round((base + noise) * 76),
-        origen: mi % 3 === 0 ? "manual" : "pdf",
-      });
-    });
-  });
-  // Combustible — only Planta Norte / Sur / Bodega RM, all 4 subcats but rotating
-  const fuelSuc = ["Planta Norte", "Planta Sur", "Bodega RM"];
-  const fuelSubs = ["diesel", "kerosene", "glp", "gas-natural"];
-  fuelSuc.forEach((suc, si) => {
-    months.forEach((mo, mi) => {
-      fuelSubs.forEach((sub, ki) => {
-        if (ki >= 2 && si === 2) return; // bodega only diesel + kerosene
-        if (ki === 3 && si === 0) return; // planta norte no gas-natural
-        const base = ki === 0 ? 3000 : ki === 1 ? 1200 : ki === 2 ? 400 : 150;
-        const noise = ((si * 5 + mi * 11 + ki * 3) % 9) * (base * 0.06);
-        const qty = Math.round(base + noise);
-        recs.push({
-          id: nextId(),
-          date: mo + "-28",
-          sucursal: suc,
-          type: "combustible",
-          subcat: sub,
-          provider: si === 0 ? "Iconstruye Petróleo" : si === 1 ? "Copec" : "Petrobras",
-          cantidad: qty,
-          unit: "L",
-          costo: Math.round(qty * (ki === 0 ? 540 : ki === 1 ? 720 : ki === 2 ? 1100 : 900)),
-          origen: mi % 4 === 0 ? "manual" : "pdf",
-        });
-      });
-    });
-  });
-  // Agua — every sucursal, every month, mixed subcats
-  SUCURSALES.forEach((suc, si) => {
-    months.forEach((mo, mi) => {
-      const subPick = si % 3 === 0 ? "potable" : si % 3 === 1 ? "gris" : "potable";
-      const base = subPick === "potable" ? 110 : 30;
-      const noise = ((si * 3 + mi * 7) % 7) * 6;
-      const qty = base + noise;
-      recs.push({
-        id: nextId(),
-        date: mo + "-28",
-        sucursal: suc,
-        type: "agua",
-        subcat: subPick,
-        provider: si % 2 === 0 ? "Aguas Andinas" : "Esval",
-        cantidad: qty,
-        unit: "m³",
-        costo: Math.round(qty * 1280),
-        origen: mi % 5 === 0 ? "manual" : "pdf",
-      });
-    });
-  });
-  // Add one Riego record so the custom subcat shows up
-  recs.push({
-    id: nextId(),
-    date: "2026-03-28",
-    sucursal: "Sucursal V",
-    type: "agua",
-    subcat: "riego",
-    provider: "Esval",
-    cantidad: 24,
-    unit: "m³",
-    costo: 30720,
-    origen: "manual",
-  });
-  return recs;
-}
-
 // ----- Initial state -----
 const initialState = {
   // routing
-  view: "landing",            // landing | manual | upload | preview | dashboard | subcat
+  view: "landing",            // landing | manual | upload | preview | dashboard | subcat | onboarding | config | config-edit | matrix
   manualStep: "form",         // form | preview | success
   uploadStep: 1,              // 1 | 2 | 3 | 4 (preview)
   // domain — empty by default; populated from Google Sheets on login + refresh
@@ -158,6 +89,11 @@ const initialState = {
   recordsLoading: false,
   recordsLastFetch: null,
   subcategories: INITIAL_SUBCATS,
+  // config (sucursales setup, populated by onboarding or seeded)
+  configSucursales: seedConfigSucursales(),
+  configEditId: null,         // id of sucursal being edited
+  // matrix view (upload status grid)
+  matrixMonth: CURRENT_MONTH_KEY,
   // form drafts (manual)
   manualDraft: emptyDraft(),
   manualErrors: {},
@@ -166,7 +102,7 @@ const initialState = {
   uploadQueue: [],            // { id, name, size, type, status, progress, extractedCount, error }
   previewRows: [],            // rows after extraction or manual draft
   // dashboard
-  dashFilters: { sucursal: "all", period: "12m", typeTab: "combustible", subcat: "all" },
+  dashFilters: { sucursal: "all", period: "12m", typeTab: "combustible", subcat: "all", estado: "activa" },
   recentlyEdited: null,       // id of just-saved row
   // ui
   toast: null,                // { id, kind, title, body, undoAction }
@@ -224,6 +160,7 @@ function reducer(state, action) {
         unit: TYPES[d.type].unit,
         costo: parseFloat(d.costo) || 0,
         origen: "manual",
+        estado: "activa",
       };
       try { window.dispatchEvent(new CustomEvent("rc:confirm", { detail: { source: "manual", records: [newRec] } })); } catch(e) {}
       return { ...state, records: [newRec, ...state.records], manualStep: "success", manualDraft: emptyDraft() };
@@ -277,6 +214,7 @@ function reducer(state, action) {
           unit: TYPES[r.type].unit,
           costo: parseFloat(r.costo) || 0,
           origen: "pdf",
+          estado: "activa",
           // metadata for Sheets/Drive sync layer
           sourceFile: r.sourceFile || null,
           numeroCliente: r.numeroCliente || "",
@@ -299,6 +237,16 @@ function reducer(state, action) {
     }
     case "DASH/CLEAR_EDIT_HIGHLIGHT":
       return { ...state, recentlyEdited: null };
+    case "DASH/DELETE_RECORD":
+      return {
+        ...state,
+        records: state.records.map(r => r.id === action.id ? { ...r, estado: "eliminada" } : r),
+      };
+    case "DASH/RESTORE_RECORD":
+      return {
+        ...state,
+        records: state.records.map(r => r.id === action.id ? { ...r, estado: "activa" } : r),
+      };
     case "DASH/UNDO_EDIT": {
       const snap = state._undoSnapshot;
       if (!snap) return state;
@@ -336,6 +284,78 @@ function reducer(state, action) {
       return { ...state, records: action.records || [], recordsLastFetch: Date.now(), recordsLoading: false };
     case "RECORDS/LOADING":
       return { ...state, recordsLoading: !!action.loading };
+
+    // ----- Config (sucursales)
+    case "CONFIG/EDIT_SUC":
+      return { ...state, view: "config-edit", configEditId: action.id };
+    case "CONFIG/TOGGLE_ACTIVE":
+      return {
+        ...state,
+        configSucursales: state.configSucursales.map(s =>
+          s.id === action.id ? { ...s, activa: !s.activa } : s
+        ),
+      };
+    case "CONFIG/DELETE_SUC":
+      return {
+        ...state,
+        configSucursales: state.configSucursales.filter(s => s.id !== action.id),
+      };
+    case "CONFIG/SAVE_SUC":
+      return {
+        ...state,
+        configSucursales: state.configSucursales.map(s =>
+          s.id === action.suc.id ? action.suc : s
+        ),
+        view: "config",
+        configEditId: null,
+      };
+    case "CONFIG/ADD_SUC": {
+      const newSuc = {
+        id: nextSucId(),
+        nombre: "Nueva sucursal",
+        direccion: "",
+        activa: true,
+        items: {
+          electricidad: { activo: false, subcats: [] },
+          combustible: { activo: false, subcats: [] },
+          agua: { activo: false, subcats: [] },
+          refrigerantes: { activo: false, subcats: [] },
+        },
+      };
+      return {
+        ...state,
+        configSucursales: [...state.configSucursales, newSuc],
+        view: "config-edit",
+        configEditId: newSuc.id,
+      };
+    }
+    case "CONFIG/RENAME_HISTORY":
+      return {
+        ...state,
+        records: state.records.map(r =>
+          r.sucursal === action.oldName ? { ...r, sucursal: action.newName } : r
+        ),
+      };
+    case "CONFIG/CREATE_PROJECT": {
+      // Persist onboarding output into configSucursales (replaces existing list)
+      const newSucs = action.sucursales.map(s => ({
+        id: s.id,
+        nombre: s.nombre.trim(),
+        direccion: s.direccion || "",
+        activa: true,
+        items: action.items[s.id] || {
+          electricidad: { activo: false, subcats: [] },
+          combustible: { activo: false, subcats: [] },
+          agua: { activo: false, subcats: [] },
+          refrigerantes: { activo: false, subcats: [] },
+        },
+      }));
+      return { ...state, configSucursales: newSucs };
+    }
+
+    // ----- Matrix view
+    case "MATRIX/SET_MONTH":
+      return { ...state, matrixMonth: action.month };
 
     // ----- Toast
     case "TOAST/SHOW":
@@ -408,8 +428,107 @@ function periodLabel(period) {
     "1m":  "Mes actual (" + curLabel + ")",
   }[period] || period;
 }
+// Names of active sucursales from current config — replaces the old static SUCURSALES list
+function activeSucNames(state) {
+  return (state?.configSucursales || []).filter(s => s.activa).map(s => s.nombre);
+}
+
+// Map an agua subcat (from configSucursales) to a stable record-level id + label.
+// Predefined tipos use their value as id (e.g. "potable"); custom ones use "otro:<slug>".
+function aguaSubcatFromConfig(sc) {
+  if (!sc?.tipo) return null;
+  if (sc.tipo === "__otro") {
+    const name = (sc.tipoCustom || "").trim();
+    if (!name) return null;
+    return { id: "otro:" + name.toLowerCase().replace(/\s+/g, "-"), label: name, source: "config" };
+  }
+  const labels = { potable: "Potable", gris: "Gris", industrial: "Industrial" };
+  return { id: sc.tipo, label: labels[sc.tipo] || sc.tipo, source: "config" };
+}
+
+// Subcategoría options for a given consumption type.
+// For "agua", derive from configured tipos in configSucursales (deduped). Falls back
+// to INITIAL_SUBCATS for other types.
+function getSubcatsFor(state, type) {
+  if (type === "agua") {
+    const seen = new Map();
+    (state?.configSucursales || []).forEach(s => {
+      if (!s.activa || !s.items?.agua?.activo) return;
+      s.items.agua.subcats.forEach(sc => {
+        const opt = aguaSubcatFromConfig(sc);
+        if (opt && !seen.has(opt.id)) seen.set(opt.id, opt);
+      });
+    });
+    return [...seen.values()];
+  }
+  return state?.subcategories?.[type] || INITIAL_SUBCATS[type] || [];
+}
+
+// Resolve a configured provider name from a sucursal subcat. Returns the proveedorCustom
+// when proveedor === "__otro", or the plain proveedor name. Empty string if not set.
+function _resolveProviderName(sc) {
+  if (!sc) return "";
+  if (sc.proveedor === "__otro") return (sc.proveedorCustom || "").trim();
+  return sc.proveedor || "";
+}
+
+// Lookup a default provider for (sucursal, type, subcatId) from configSucursales.
+// - For agua/combustible: match the subcat whose tipo derives to subcatId.
+// - For electricidad/refrigerantes: subcatId is ignored; use the first subcat with a provider.
+// Returns "" if no configured provider found.
+function getConfiguredProvider(state, sucursalName, type, subcatId) {
+  if (!sucursalName || !type) return "";
+  const suc = (state?.configSucursales || []).find(s => s.activa && s.nombre === sucursalName);
+  if (!suc || !suc.items?.[type]?.activo) return "";
+  const subcats = suc.items[type].subcats || [];
+  if (type === "agua" && subcatId) {
+    const match = subcats.find(sc => {
+      const opt = aguaSubcatFromConfig(sc);
+      return opt && opt.id === subcatId;
+    });
+    if (match) return _resolveProviderName(match);
+  }
+  if (type === "combustible" && subcatId) {
+    const match = subcats.find(sc => sc.tipo === subcatId);
+    if (match) return _resolveProviderName(match);
+  }
+  // Fallback: first subcat with a provider
+  for (const sc of subcats) {
+    const p = _resolveProviderName(sc);
+    if (p) return p;
+  }
+  return "";
+}
+
+// Provider <Select> options for (sucursal, type): configured providers from the sucursal
+// (resolved to their display names) merged with the static PROVIDERS catalog. Deduped.
+function getProviderOptionsFor(state, sucursalName, type) {
+  if (!type) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (name) => {
+    const v = (name || "").trim();
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  };
+  const suc = (state?.configSucursales || []).find(s => s.activa && s.nombre === sucursalName);
+  if (suc && suc.items?.[type]?.activo) {
+    suc.items[type].subcats.forEach(sc => push(_resolveProviderName(sc)));
+  }
+  (PROVIDERS[type] || []).forEach(push);
+  return out;
+}
+
 function subcatLabel(type, id) {
   if (!id) return null;
+  // Custom agua tipo: "otro:slug" — rebuild label from slug
+  if (type === "agua" && id.startsWith("otro:")) {
+    return id.slice(5).split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  }
+  if (type === "agua") {
+    return ({ potable: "Potable", gris: "Gris", industrial: "Industrial" })[id] || id;
+  }
   const list = INITIAL_SUBCATS[type] || [];
   const found = list.find(s => s.id === id);
   return found ? found.label : id;
@@ -417,9 +536,10 @@ function subcatLabel(type, id) {
 
 Object.assign(window, {
   StateProvider, StateContext, useApp,
-  COMPANY, SUCURSALES, TYPES, INITIAL_SUBCATS, PROVIDERS,
+  COMPANY, SUCURSALES, TYPES, INITIAL_SUBCATS, PROVIDERS, FUEL_SUBCATS_CATALOG,
   months, nextId,
   CURRENT_MONTH_KEY, PREV_MONTH_KEY,
   fmtCLP, fmtNum, fmtDate, monthLabelShort,
-  periodToMonthKeys, periodLabel, subcatLabel,
+  periodToMonthKeys, periodLabel, subcatLabel, activeSucNames, getSubcatsFor,
+  getConfiguredProvider, getProviderOptionsFor,
 });

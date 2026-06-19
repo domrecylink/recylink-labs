@@ -1,12 +1,12 @@
 // Manual flow — form → preview → success
 
 // ---- Validation -----
-function validateManual(d) {
+function validateManual(d, state) {
   const errors = {};
   if (!d.date) errors.date = "Indica la fecha del consumo.";
   if (!d.sucursal) errors.sucursal = "Elige una sucursal.";
   if (!d.type) errors.type = "Indica el tipo de consumo.";
-  if (d.type && INITIAL_SUBCATS[d.type].length > 0 && !d.subcat) {
+  if (d.type && getSubcatsFor(state, d.type).length > 0 && !d.subcat) {
     errors.subcat = "Este tipo requiere subcategoría.";
   }
   if (!d.cantidad) errors.cantidad = "Ingresa la cantidad consumida.";
@@ -51,11 +51,20 @@ const ManualForm = () => {
 
   const set = (field, value) => dispatch({ type: "MANUAL/SET_FIELD", field, value });
 
-  const subcatOptions = d.type ? state.subcategories[d.type] : [];
+  const subcatOptions = d.type ? getSubcatsFor(state, d.type) : [];
   const typeRequiresSubcat = d.type && subcatOptions.length > 0;
+  const providerOptions = getProviderOptionsFor(state, d.sucursal, d.type);
+
+  // Auto-fill provider from sucursal config when (sucursal, type, subcat) changes,
+  // only if the provider field is still empty (don't overwrite a user pick).
+  React.useEffect(() => {
+    if (d.provider) return;
+    const auto = getConfiguredProvider(state, d.sucursal, d.type, d.subcat);
+    if (auto) set("provider", auto);
+  }, [d.sucursal, d.type, d.subcat]);
 
   const onContinue = () => {
-    const errs = validateManual(d);
+    const errs = validateManual(d, state);
     dispatch({ type: "MANUAL/SET_ERRORS", errors: errs });
     if (Object.keys(errs).length === 0) {
       dispatch({ type: "MANUAL/GO_PREVIEW" });
@@ -101,7 +110,7 @@ const ManualForm = () => {
                 <Select
                   value={d.sucursal}
                   onChange={v => set("sucursal", v)}
-                  options={SUCURSALES}
+                  options={activeSucNames(state)}
                   placeholder="Elige una sucursal…"
                   error={!!e.sucursal}
                 />
@@ -207,7 +216,7 @@ const ManualForm = () => {
                 <Select
                   value={d.provider}
                   onChange={v => set("provider", v)}
-                  options={d.type ? PROVIDERS[d.type] : ["—"]}
+                  options={d.type ? providerOptions : []}
                   placeholder="Elige un proveedor…"
                 />
               </Field>

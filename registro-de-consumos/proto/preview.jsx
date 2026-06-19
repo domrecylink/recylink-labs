@@ -140,7 +140,7 @@ const PreviewRow = ({ row }) => {
       <td onClick={() => editCell("sucursal")} className={editing === "sucursal" ? "cell-edit" : ""}>
         {editing === "sucursal"
           ? <select autoFocus value={row.sucursal} onChange={e => update("sucursal", e.target.value)} onBlur={commit} style={{ border: "none", outline: "none", background: "transparent", width: "100%", padding: "0 16px", height: 44, font: "500 13px/1 var(--rl-font-body)", color: "var(--rl-gray-900)" }}>
-              {SUCURSALES.map(s => <option key={s} value={s}>{s}</option>)}
+              {activeSucNames(state).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           : row.sucursal}
       </td>
