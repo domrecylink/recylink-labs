@@ -25,6 +25,13 @@ const RC_CONFIG = {
     ENEL_PROCESADOS:    "1AI2biUrUAZFHV9dYubNm2xGKh1gmzpus",
     AGUAS_POR_PROCESAR: "1IHvHFeB-OWSIIfyxaUh3YvpoBnmGMXz9",
     AGUAS_PROCESADOS:   "1rp-qUzPUYu9dX24YZmCeNR7CXgwSzY8p",
+    // Folder where manual-entry facturas/boletas land. Leave empty to skip the upload
+    // (the filename will still be captured locally on the record).
+    MANUAL_FACTURAS:    "",
+    // Optional dedicated folder for documents uploaded via "Subir documento" with
+    // providers other than Enel/Aguas (e.g. Iconstruye). Falls back to MANUAL_FACTURAS
+    // when empty so a single config covers both flows.
+    UPLOAD_FACTURAS:    "",
   },
 
   EMPRESA: "Euro",
@@ -326,7 +333,8 @@ async function rcHandleConfirm(ev) {
       const isAguas = /Aguas/i.test(providerName);
       const folderOrigen = isEnel ? RC_CONFIG.FOLDERS.ENEL_POR_PROCESAR
                         : isAguas ? RC_CONFIG.FOLDERS.AGUAS_POR_PROCESAR
-                        : null;
+                        : (RC_CONFIG.FOLDERS.UPLOAD_FACTURAS || RC_CONFIG.FOLDERS.MANUAL_FACTURAS || null);
+      // Only Enel/Aguas have a "Procesados" sibling; generic uploads stay in their source folder.
       const folderDestino = isEnel ? RC_CONFIG.FOLDERS.ENEL_PROCESADOS
                          : isAguas ? RC_CONFIG.FOLDERS.AGUAS_PROCESADOS
                          : null;
@@ -348,6 +356,29 @@ async function rcHandleConfirm(ev) {
             console.log("[rc-sync] uploaded:", up);
           } catch (e) { console.warn("[rc-sync] upload failed", f.name, e); }
         }
+      }
+    }
+
+    // 1b) Subir factura adjunta a una entrada manual (un archivo por record)
+    if (source === "manual" && detail.factura && detail.factura.file) {
+      const folder = RC_CONFIG.FOLDERS.MANUAL_FACTURAS;
+      if (folder) {
+        try {
+          console.log("[rc-sync] uploading factura:", detail.factura.name);
+          const base64 = await rcFileToBase64(detail.factura.file);
+          const up = await rcApiPost({
+            action: "upload",
+            name: detail.factura.file.name,
+            mimeType: detail.factura.file.type || "application/octet-stream",
+            base64: base64,
+            folderId: folder,
+          });
+          // attach the link to every manual record in this confirm batch
+          (records || []).forEach((r) => { r._driveLink = up.link; });
+          console.log("[rc-sync] factura uploaded:", up);
+        } catch (e) { console.warn("[rc-sync] factura upload failed", e); }
+      } else {
+        console.log("[rc-sync] MANUAL_FACTURAS folder not configured — skipping factura upload");
       }
     }
 

@@ -586,6 +586,7 @@ const RecentTable = () => {
               <th className="num">Cantidad</th>
               <th className="num">Costo (CLP)</th>
               <th>Origen</th>
+              <th>Documento</th>
               <th>Estado</th>
               <th style={{ width: 48 }}></th>
             </tr>
@@ -627,6 +628,38 @@ const RecentTable = () => {
                     {r.origen === "manual" && <Chip size="sm" icon="edit">Manual</Chip>}
                     {r.origen === "sheets" && <Chip size="sm" icon="cloud">Importado</Chip>}
                   </td>
+                  <td className={isDel ? "td-del" : ""}>
+                    {r._driveLink ? (
+                      <a
+                        href={r._driveLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={r.factura || "Ver documento"}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          color: "var(--rl-primary-900)",
+                          font: "600 12px/1 var(--rl-font-display)",
+                          textDecoration: "none",
+                          padding: "4px 8px",
+                          borderRadius: 6,
+                          border: "1px solid var(--rl-primary-200)",
+                          background: "var(--rl-primary-50)",
+                        }}
+                      >
+                        <Icon name="picture_as_pdf" size={14} />
+                        <span>Ver</span>
+                        <Icon name="open_in_new" size={12} />
+                      </a>
+                    ) : r.factura ? (
+                      <span className="prt-row" style={{ gap: 4, color: "var(--rl-gray-500)" }} title={r.factura}>
+                        <Icon name="picture_as_pdf" size={14} />
+                        <span style={{ font: "500 12px/1 var(--rl-font-body)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.factura}</span>
+                      </span>
+                    ) : (
+                      <span className="prt-hint">—</span>
+                    )}
+                  </td>
                   <td>
                     {isDel
                       ? <Chip kind="error" size="sm">Eliminada</Chip>
@@ -649,7 +682,7 @@ const RecentTable = () => {
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: 32, textAlign: "center", color: "var(--rl-gray-500)" }}>
+              <tr><td colSpan={11} style={{ padding: 32, textAlign: "center", color: "var(--rl-gray-500)" }}>
                 No hay registros que coincidan con los filtros actuales.
               </td></tr>
             )}

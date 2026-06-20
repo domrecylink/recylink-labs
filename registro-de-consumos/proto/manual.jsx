@@ -38,6 +38,58 @@ function detectAnomaly(records, draft) {
 }
 
 // =========================================================
+// FacturaUpload — optional file picker for "Factura o boleta"
+// =========================================================
+const FacturaUpload = ({ filename, onPick }) => {
+  const inputRef = React.useRef(null);
+  return (
+    <Field label="Factura o boleta (opcional)" helper="PDF o imagen — se adjunta al registro de este consumo.">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,image/*"
+        style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files && e.target.files[0]; onPick(f || null); e.target.value = ""; }}
+      />
+      {filename ? (
+        <div className="prt-row" style={{
+          gap: 10, padding: "10px 14px",
+          background: "var(--rl-gray-50)",
+          border: "1.5px solid var(--rl-gray-200)",
+          borderRadius: 8,
+        }}>
+          <Icon name="picture_as_pdf" size={18} style={{ color: "var(--rl-primary-900)" }} />
+          <span style={{ flex: 1, font: "500 13px/1 var(--rl-font-body)", color: "var(--rl-gray-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{filename}</span>
+          <Btn size="sm" kind="ghost" onClick={() => inputRef.current?.click()}>Cambiar</Btn>
+          <Btn size="sm" kind="ghost" onClick={() => onPick(null)} icon="close" title="Quitar archivo"></Btn>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          style={{
+            all: "unset", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            padding: "12px 16px",
+            background: "#FFF",
+            border: "1.5px dashed var(--rl-gray-300)",
+            borderRadius: 8,
+            color: "var(--rl-gray-600)",
+            font: "500 13px/1 var(--rl-font-body)",
+            transition: "border-color .12s, background .12s, color .12s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--rl-primary-300)"; e.currentTarget.style.color = "var(--rl-primary-900)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--rl-gray-300)"; e.currentTarget.style.color = "var(--rl-gray-600)"; }}
+        >
+          <Icon name="cloud_upload" size={18} />
+          <span>Adjuntar factura o boleta</span>
+        </button>
+      )}
+    </Field>
+  );
+};
+
+// =========================================================
 // FORM
 // =========================================================
 const ManualForm = () => {
@@ -229,6 +281,15 @@ const ManualForm = () => {
               </Field>
             </div>
 
+            {/* Row 5: Factura o boleta (opcional) — un archivo por registro */}
+            <FacturaUpload
+              filename={d.factura || ""}
+              onPick={(file) => {
+                window.__rcManualFactura = file ? { file, name: file.name } : null;
+                set("factura", file ? file.name : "");
+              }}
+            />
+
           </div>
         </Card>
 
@@ -269,6 +330,14 @@ const SidePreview = ({ draft }) => {
           )}
           <PrevRow label="Cantidad" value={draft.cantidad ? <strong>{fmtNum(parseFloat(draft.cantidad))} {t?.unit || ""}</strong> : <em style={{ color: "var(--rl-gray-400)" }}>0</em>} />
           <PrevRow label="Costo" value={draft.costo ? <strong>{fmtCLP(parseFloat(draft.costo))}</strong> : <em style={{ color: "var(--rl-gray-400)" }}>—</em>} />
+          {draft.factura && (
+            <PrevRow label="Factura" value={
+              <span className="prt-row" style={{ gap: 4 }}>
+                <Icon name="picture_as_pdf" size={14} style={{ color: "var(--rl-primary-900)" }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{draft.factura}</span>
+              </span>
+            } />
+          )}
         </div>
       </Card>
 
@@ -335,6 +404,7 @@ const ManualPreview = () => {
             <span className="prt-hint">Cantidad</span>          <span style={{ font: "700 22px/26px var(--rl-font-display)", color: "var(--rl-gray-900)" }}>{fmtNum(parseFloat(d.cantidad))} <span style={{ font: "600 14px/1 var(--rl-font-display)", color: "var(--rl-gray-500)" }}>{t.unit}</span></span>
             <span className="prt-hint">Costo</span>             <span style={{ font: "700 16px/22px var(--rl-font-display)" }}>{d.costo ? fmtCLP(parseFloat(d.costo)) : <em style={{ color: "var(--rl-gray-400)" }}>—</em>}</span>
             <span className="prt-hint">Proveedor</span>         <span>{d.provider || <em style={{ color: "var(--rl-gray-400)" }}>—</em>}</span>
+            {d.factura && (<><span className="prt-hint">Factura</span><span className="prt-row" style={{ gap: 6 }}><Icon name="picture_as_pdf" size={16} style={{ color: "var(--rl-primary-900)" }} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.factura}</span></span></>)}
             {d.notes && (<><span className="prt-hint">Notas</span><span style={{ color: "var(--rl-gray-700)" }}>{d.notes}</span></>)}
           </div>
         </Card>
@@ -443,4 +513,4 @@ const ManualView = () => {
   return <ManualForm />;
 };
 
-Object.assign(window, { ManualView, ManualForm, ManualPreview, ManualSuccess });
+Object.assign(window, { ManualView, ManualForm, ManualPreview, ManualSuccess, FacturaUpload });

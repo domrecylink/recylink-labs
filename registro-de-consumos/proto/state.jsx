@@ -122,6 +122,7 @@ function emptyDraft() {
     cantidad: "",
     costo: "",
     notes: "",
+    factura: "",
   };
 }
 
@@ -142,6 +143,7 @@ function reducer(state, action) {
     case "MANUAL/SET_ERRORS":
       return { ...state, manualErrors: action.errors };
     case "MANUAL/RESET":
+      try { window.__rcManualFactura = null; } catch(e) {}
       return { ...state, manualDraft: emptyDraft(), manualErrors: {}, manualStep: "form" };
     case "MANUAL/GO_PREVIEW":
       return { ...state, manualStep: "preview" };
@@ -161,8 +163,11 @@ function reducer(state, action) {
         costo: parseFloat(d.costo) || 0,
         origen: "manual",
         estado: "activa",
+        factura: d.factura || null,
       };
-      try { window.dispatchEvent(new CustomEvent("rc:confirm", { detail: { source: "manual", records: [newRec] } })); } catch(e) {}
+      const factura = (typeof window !== "undefined") ? (window.__rcManualFactura || null) : null;
+      try { window.dispatchEvent(new CustomEvent("rc:confirm", { detail: { source: "manual", records: [newRec], factura } })); } catch(e) {}
+      try { window.__rcManualFactura = null; } catch(e) {}
       return { ...state, records: [newRec, ...state.records], manualStep: "success", manualDraft: emptyDraft() };
     }
 
@@ -215,6 +220,8 @@ function reducer(state, action) {
           costo: parseFloat(r.costo) || 0,
           origen: "pdf",
           estado: "activa",
+          // surface document filename for the detail-table "Documento" column
+          factura: r.sourceFile || null,
           // metadata for Sheets/Drive sync layer
           sourceFile: r.sourceFile || null,
           numeroCliente: r.numeroCliente || "",
