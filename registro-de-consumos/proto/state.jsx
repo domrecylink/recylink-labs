@@ -81,7 +81,7 @@ const nextId = () => "r" + (__idCounter++);
 // ----- Initial state -----
 const initialState = {
   // routing
-  view: "landing",            // landing | manual | upload | preview | dashboard | subcat | onboarding | config | config-edit | matrix
+  view: "landing",            // landing | manual | upload | preview | dashboard | subcat | onboarding | config | config-edit | matrix | register
   manualStep: "form",         // form | preview | success
   uploadStep: 1,              // 1 | 2 | 3 | 4 (preview)
   // domain — empty by default; populated from Google Sheets on login + refresh

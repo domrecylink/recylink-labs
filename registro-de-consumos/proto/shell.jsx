@@ -1,20 +1,40 @@
-// Shell — top-level layout: host chrome + iframe-embed bar + router + toast
+// Shell — top-level layout: collapsible sidebar + main content + toast
+
+const SIDEBAR_LS_KEY = "rcSidebarCollapsed";
+
+const readSidebarCollapsed = () => {
+  try {
+    const v = window.localStorage.getItem(SIDEBAR_LS_KEY);
+    if (v === "1") return true;
+    if (v === "0") return false;
+  } catch (e) {}
+  // Default: collapsed on narrow viewports, expanded otherwise
+  return typeof window !== "undefined" && window.innerWidth < 900;
+};
+
+const writeSidebarCollapsed = (v) => {
+  try { window.localStorage.setItem(SIDEBAR_LS_KEY, v ? "1" : "0"); } catch (e) {}
+};
 
 const Shell = () => {
-  const { state, dispatch } = useApp();
+  const { state } = useApp();
+  const [collapsed, setCollapsed] = React.useState(readSidebarCollapsed);
 
-  // Persist scroll-to-top on view change
+  // Persist
+  React.useEffect(() => { writeSidebarCollapsed(collapsed); }, [collapsed]);
+
+  // Scroll-to-top on view change
   React.useEffect(() => {
     const el = document.querySelector(".prt-host-content");
     if (el) el.scrollTop = 0;
   }, [state.view, state.manualStep, state.uploadStep]);
 
   return (
-    <div className="prt-app">
+    <div className={"prt-app" + (collapsed ? " sidebar-collapsed" : " sidebar-expanded")}>
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
       <div className="prt-host-content">
         <ViewSwitcher />
       </div>
-      <NavHints />
       <ToastHost />
     </div>
   );
@@ -30,74 +50,113 @@ const ViewSwitcher = () => {
     case "config":      return <ConfigView />;
     case "config-edit": return <ConfigEditView />;
     case "matrix":      return <UploadMatrixView />;
+    case "register":    return <RegisterHubView />;
     case "landing":
     default:            return <Landing />;
   }
 };
 
-// Small persistent nav hint (lets users jump anywhere)
-const NavHints = () => {
+const SIDEBAR_ITEMS = [
+  { view: "landing",    label: "Inicio",        icon: "home",         extra: {} },
+  { view: "dashboard",  label: "Dashboard",     icon: "dashboard",    extra: {} },
+  { view: "register",   label: "Registrar",     icon: "edit",         extra: {} },
+  { view: "config",     label: "Configuración", icon: "settings",     extra: {} },
+];
+
+const Sidebar = ({ collapsed, onToggle }) => {
   const { state, dispatch } = useApp();
   const go = (view, extra) => dispatch({ type: "NAVIGATE", view, ...extra });
-  const items = [
-    { view: "landing",    label: "Inicio",      icon: "home" },
-    { view: "manual",     label: "Manual",      icon: "edit" },
-    { view: "upload",     label: "Subir",       icon: "cloud_upload" },
-    { view: "dashboard",  label: "Dashboard",   icon: "dashboard" },
-    { view: "onboarding", label: "Onboarding",  icon: "tune" },
-    { view: "config",     label: "Config",      icon: "settings" },
-  ];
+
   return (
-    <div style={{
-      position: "fixed",
-      bottom: 18, left: "50%", transform: "translateX(-50%)",
-      background: "rgba(16,24,40,0.92)",
-      borderRadius: 999,
-      padding: "6px 8px",
-      display: "flex", gap: 4,
-      boxShadow: "0 14px 36px -8px rgba(16,24,40,0.45)",
-      backdropFilter: "blur(8px)",
-      zIndex: 50,
-    }}>
-      {items.map(it => {
-        const isActive = state.view === it.view;
-        return (
-          <button
-            key={it.view}
-            onClick={() => go(it.view, it.view === "manual" ? { manualStep: "form" } : it.view === "upload" ? { uploadStep: 1 } : {})}
-            style={{
-              all: "unset", cursor: "pointer",
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "8px 14px",
-              borderRadius: 999,
-              font: "600 12px/1 var(--rl-font-display)",
-              color: isActive ? "#0C111D" : "rgba(255,255,255,0.85)",
-              background: isActive ? "#FFFFFF" : "transparent",
-              transition: "background 100ms, color 100ms",
-            }}
-          >
-            <Icon name={it.icon} size={16} />
-            <span>{it.label}</span>
-          </button>
-        );
-      })}
-      <div style={{ width: 1, background: "rgba(255,255,255,0.18)", margin: "4px 4px" }}></div>
-      <button
-        onClick={() => window.location.reload()}
-        title="Reiniciar prototipo (recarga la página)"
-        style={{
-          all: "unset", cursor: "pointer",
-          display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "8px 12px", borderRadius: 999,
-          color: "rgba(255,255,255,0.6)",
-          font: "600 12px/1 var(--rl-font-display)",
-        }}
-      >
-        <Icon name="refresh" size={16} />
-        Reset
-      </button>
+    <aside className={"rc-sidebar" + (collapsed ? " collapsed" : "")}>
+      <div className="rc-sidebar-head">
+        {!collapsed && (
+          <div className="rc-sidebar-brand">
+            <span className="rc-sidebar-logo">R</span>
+            <span className="rc-sidebar-brand-text">Recylink</span>
+          </div>
+        )}
+        <button
+          className="rc-sidebar-toggle"
+          onClick={onToggle}
+          title={collapsed ? "Expandir menú" : "Colapsar menú"}
+          aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
+        >
+          <Icon name={collapsed ? "arrow_forward" : "arrow_back"} size={16} />
+        </button>
+      </div>
+
+      <nav className="rc-sidebar-nav">
+        {SIDEBAR_ITEMS.map(it => {
+          const isActive = state.view === it.view
+            || (it.view === "config" && state.view === "config-edit")
+            || (it.view === "dashboard" && state.view === "matrix")
+            || (it.view === "register" && (state.view === "manual" || state.view === "upload"));
+          return (
+            <button
+              key={it.view}
+              className={"rc-sidebar-item" + (isActive ? " active" : "")}
+              onClick={() => go(it.view, it.extra)}
+              data-tooltip={it.label}
+            >
+              <span className="rc-sidebar-item-ico"><Icon name={it.icon} size={18} /></span>
+              <span className="rc-sidebar-item-label">{it.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="rc-sidebar-foot">
+        <button
+          className="rc-sidebar-item rc-sidebar-reset"
+          onClick={() => window.location.reload()}
+          data-tooltip="Reiniciar prototipo"
+        >
+          <span className="rc-sidebar-item-ico"><Icon name="refresh" size={18} /></span>
+          <span className="rc-sidebar-item-label">Reset</span>
+        </button>
+      </div>
+    </aside>
+  );
+};
+
+// =========================================================
+// Register hub — entry point for manual / upload flows
+// =========================================================
+const RegisterHubView = () => {
+  const { dispatch } = useApp();
+  return (
+    <div>
+      <SectionHead
+        eyebrow="Registrar consumo"
+        title="¿Cómo quieres registrar?"
+        sub="Ingresa un consumo con el formulario, o sube un documento de tu proveedor y extraemos los datos por ti."
+      />
+      <div className="rc-register-hub">
+        <button
+          className="rc-register-card primary"
+          onClick={() => dispatch({ type: "NAVIGATE", view: "manual", manualStep: "form" })}
+        >
+          <span className="rc-register-card-ico"><Icon name="edit" size={28} /></span>
+          <span className="rc-register-card-title">Registrar a mano</span>
+          <span className="rc-register-card-desc">Un consumo a la vez con un formulario corto. ~1 min.</span>
+        </button>
+        <button
+          className="rc-register-card alt"
+          onClick={() => dispatch({ type: "NAVIGATE", view: "upload", uploadStep: 1 })}
+        >
+          <span className="rc-register-card-ico alt"><Icon name="cloud_upload" size={28} /></span>
+          <span className="rc-register-card-title">Subir documento</span>
+          <span className="rc-register-card-desc">Sube PDFs o Excel de tus proveedores. Rápido y automático.</span>
+          <span className="rc-register-card-chips">
+            <Chip size="sm">Enel</Chip>
+            <Chip size="sm">Aguas Andinas</Chip>
+            <Chip size="sm">Iconstruye</Chip>
+          </span>
+        </button>
+      </div>
     </div>
   );
 };
 
-Object.assign(window, { Shell, ViewSwitcher, NavHints });
+Object.assign(window, { Shell, ViewSwitcher, Sidebar, RegisterHubView });
