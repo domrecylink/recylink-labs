@@ -48,6 +48,16 @@ const ICON_PATHS = {
   bolt:               <g><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></g>,
   water_drop:         <g><path d="M12 2.69 5.64 9.06a9 9 0 1 0 12.72 0L12 2.69z"/></g>,
   local_gas_station:  <g><path d="M3 22h12V4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v18z"/><line x1="3" y1="10" x2="15" y2="10"/><path d="M15 8h2a2 2 0 0 1 2 2v6a1 1 0 0 0 2 0V8.5L19 6"/><rect x="6" y="13" width="6" height="5" rx="0.5"/></g>,
+  snowflake:          <g><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/><polyline points="8 4 12 8 16 4"/><polyline points="8 20 12 16 16 20"/><polyline points="4 8 8 12 4 16"/><polyline points="20 8 16 12 20 16"/></g>,
+
+  // Config / settings
+  tune:          <g><line x1="4" y1="6" x2="11" y2="6"/><line x1="15" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="8" y2="12"/><line x1="12" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="15" y2="18"/><line x1="19" y1="18" x2="20" y2="18"/><circle cx="13" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></g>,
+  settings:      <g><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></g>,
+  checklist:     <g><polyline points="3 7 5 9 9 5"/><polyline points="3 14 5 16 9 12"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="14" x2="21" y2="14"/><line x1="13" y1="21" x2="21" y2="21"/><polyline points="3 21 5 23 9 19"/></g>,
+  toggle_off:    <g><rect x="1" y="6" width="22" height="12" rx="6" ry="6"/><circle cx="7" cy="12" r="3"/></g>,
+  cloud:         <g><path d="M17.5 19a4.5 4.5 0 1 0-1.5-8.75A6 6 0 1 0 6 14h11.5z"/></g>,
+  expand_more:   <polyline points="6 9 12 15 18 9"/>,
+  expand_less:   <polyline points="18 15 12 9 6 15"/>,
 };
 
 const Icon = ({ name, size = 18, fill, color, style, strokeWidth = 2 }) => {
