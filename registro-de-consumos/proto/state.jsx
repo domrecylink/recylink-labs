@@ -347,6 +347,8 @@ function reducer(state, action) {
       return { ...state, recordsLoading: !!action.loading };
 
     // ----- Config (sucursales)
+    case "CONFIG/LOAD":
+      return { ...state, configSucursales: action.configSucursales };
     case "CONFIG/EDIT_SUC":
       return { ...state, view: "config-edit", configEditId: action.id };
     case "CONFIG/TOGGLE_ACTIVE":

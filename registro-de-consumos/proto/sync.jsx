@@ -130,6 +130,19 @@ function rcNum(v) {
   return isNaN(n) ? 0 : n;
 }
 
+// ----- Config persistence (configSucursales ↔ "Config" sheet) ------------
+
+async function rcReadConfig(key) {
+  if (!rcEndpointConfigured()) return null;
+  const data = await rcApiGet({ action: "getConfig", key });
+  return data && data.value != null ? data.value : null;
+}
+
+async function rcWriteConfig(key, value) {
+  if (!rcEndpointConfigured()) return;
+  await rcApiPost({ action: "setConfig", key, value });
+}
+
 // ----- Read all records ---------------------------------------------------
 
 async function rcReadAllRecords() {
@@ -481,14 +494,33 @@ window.addEventListener("rc:edit", rcHandleEdit);
 
 // ----- React helpers ------------------------------------------------------
 
-// Bootstrap: cargar registros desde Sheets al iniciar.
+// Bootstrap: cargar registros + configSucursales desde Sheets al iniciar.
 const SyncBootstrap = () => {
   React.useEffect(() => {
-    if (rcEndpointConfigured()) {
-      rcRefreshDashboard();
-    } else {
-      console.warn("[rc-sync] APPS_SCRIPT_URL no está configurada — el dashboard quedará vacío.");
+    async function init() {
+      if (!rcEndpointConfigured()) {
+        console.warn("[rc-sync] APPS_SCRIPT_URL no está configurada — el dashboard quedará vacío.");
+        window.__rcConfigBootstrapped = true;
+        return;
+      }
+      // 1) Registros (comportamiento anterior)
+      await rcRefreshDashboard();
+      // 2) Configuración de sucursales
+      try {
+        const cfg = await rcReadConfig("configSucursales");
+        if (cfg && Array.isArray(cfg) && cfg.length > 0) {
+          const { dispatch } = window.__rcStoreRef || {};
+          if (dispatch) {
+            window.__rcLoadedConfigJson = JSON.stringify(cfg);
+            dispatch({ type: "CONFIG/LOAD", configSucursales: cfg });
+          }
+        }
+      } catch (e) {
+        console.warn("[rc-sync] config load failed", e);
+      }
+      window.__rcConfigBootstrapped = true;
     }
+    init();
   }, []);
   return null;
 };
@@ -522,13 +554,38 @@ const SyncToaster = () => {
   return null;
 };
 
-// Expone el store al handler.
+// Expone el store al handler y persiste configSucursales en Sheets.
 const StoreBridge = () => {
   const app = useApp();
+  const debounceRef = React.useRef(null);
+
   React.useEffect(() => {
     window.__rcStoreRef = app;
     return () => { window.__rcStoreRef = null; };
   }, [app]);
+
+  // Guarda configSucursales en Sheets cuando cambia (debounce 800ms).
+  // Salta la escritura de vuelta si el valor vino de una carga inicial.
+  React.useEffect(() => {
+    if (!window.__rcConfigBootstrapped) return;
+    const json = JSON.stringify(app.state.configSucursales);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      if (!rcEndpointConfigured()) return;
+      if (window.__rcLoadedConfigJson === json) {
+        window.__rcLoadedConfigJson = undefined;
+        return;
+      }
+      try {
+        await rcWriteConfig("configSucursales", app.state.configSucursales);
+        console.log("[rc-sync] configSucursales guardada:", app.state.configSucursales.length, "sucursal(es)");
+      } catch (e) {
+        console.error("[rc-sync] config save failed", e);
+      }
+    }, 800);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [app.state.configSucursales]);
+
   return null;
 };
 
@@ -582,4 +639,5 @@ const SheetLink = () => null;
 
 Object.assign(window, {
   StoreBridge, SyncBootstrap, SyncToaster, SyncStatus, SheetLink, RC_CONFIG,
+  rcReadConfig, rcWriteConfig,
 });

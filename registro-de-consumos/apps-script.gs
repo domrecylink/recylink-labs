@@ -64,6 +64,7 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || "read";
     if (action === "read") return jsonOut(readAll());
+    if (action === "getConfig") return jsonOut(getConfigValue(e.parameter.key));
     if (action === "ping") return jsonOut({ ok: true, pong: new Date().toISOString() });
     return jsonOut({ error: "unknown action: " + action });
   } catch (err) {
@@ -75,6 +76,10 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || "{}");
     const action = body.action;
+    if (action === "setConfig") {
+      setConfigValue(body.key, body.value);
+      return jsonOut({ ok: true });
+    }
     if (action === "append") {
       appendRows(body.sheet, body.values || []);
       return jsonOut({ ok: true, appended: (body.values || []).length });
@@ -166,4 +171,39 @@ function ensureSheets() {
       sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     }
   });
+}
+
+// ----- Config key/value store (hoja "Config") ----------------------------
+
+function getConfigValue(key) {
+  if (!key) return { value: null };
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Config");
+  if (!sheet) return { value: null };
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === key) {
+      try { return { value: JSON.parse(data[i][1]) }; } catch (e) { return { value: null }; }
+    }
+  }
+  return { value: null };
+}
+
+function setConfigValue(key, value) {
+  if (!key) throw new Error("key missing");
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Config");
+  if (!sheet) {
+    sheet = ss.insertSheet("Config");
+    sheet.getRange(1, 1, 1, 2).setValues([["key", "value"]]);
+  }
+  var data = sheet.getDataRange().getValues();
+  var json = JSON.stringify(value);
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === key) {
+      sheet.getRange(i + 1, 2).setValue(json);
+      return;
+    }
+  }
+  sheet.appendRow([key, json]);
 }
