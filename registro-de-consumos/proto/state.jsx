@@ -605,9 +605,13 @@ function getProviderOptionsFor(state, sucursalName, type) {
   return out;
 }
 
-// Normaliza un número de cliente para comparar (quita guiones, espacios, etc.).
+// Normaliza un número de cliente para comparar. Quita puntos/espacios y el
+// dígito verificador final ("12.345.678-9" → "12345678"), así matchea aunque
+// la factura lo traiga y la config no (o viceversa).
 function normNumCliente(s) {
-  return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  let t = String(s || "").trim().toLowerCase().replace(/[\s.]/g, "");
+  t = t.replace(/-[0-9k]$/, "");        // dígito verificador estilo RUT
+  return t.replace(/[^a-z0-9]/g, "");
 }
 
 // Busca en la config qué sucursal/subcat/proveedor corresponde a un número de
