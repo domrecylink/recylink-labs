@@ -51,8 +51,11 @@ function rcExtraerEnel(textBundle) {
     costo: 0,
   };
 
-  // A. Número de Cliente
-  const mCli = texto.match(/(\d{4,8}-\d)/);
+  // A. Número de Cliente — anclar a la etiqueta "cliente" para no agarrar otro
+  // número con el mismo patrón (medidor, NIC, etc.). Fallback: primer match.
+  let mCli = texto.match(/cliente[^0-9]{0,25}(\d{4,8}-[\dkK])/i);
+  if (!mCli) mCli = texto.match(/(\d{4,8}-[\dkK])[^0-9]{0,25}cliente/i);
+  if (!mCli) mCli = texto.match(/(\d{4,8}-[\dkK])/);
   if (mCli) out.numeroCliente = mCli[1];
 
   // B. Fecha de Lectura
