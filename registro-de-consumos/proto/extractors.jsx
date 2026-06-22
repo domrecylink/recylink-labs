@@ -51,10 +51,11 @@ function rcExtraerEnel(textBundle) {
     costo: 0,
   };
 
-  // A. Número de Cliente — anclar a la etiqueta "Número de cliente" para no
-  // capturar el RUT de Enel (96800570-7) ni el del cliente. Toma el primer
+  // A. Número de Cliente — anclar a la etiqueta para no capturar el RUT de Enel
+  // (96800570-7) ni el del cliente. Acepta variantes del rótulo: "Número de
+  // cliente", "Numero cliente", "N° de cliente", "Nº cliente". Toma el primer
   // XXXXXXX-X tras la etiqueta (admite saltos de línea). Fallback: genérico.
-  let mCli = texto.match(/N[úu]mero\s+de\s+cliente[\s\S]{0,40}?(\d{4,8}-[\dkK])/i);
+  let mCli = texto.match(/N(?:[úu]mero|[°º])\s*(?:de\s+)?cliente[\s\S]{0,40}?(\d{4,8}-[\dkK])/i);
   if (!mCli) mCli = texto.match(/(\d{4,8}-\d)/);
   if (mCli) out.numeroCliente = mCli[1];
 
