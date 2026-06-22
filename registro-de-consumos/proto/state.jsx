@@ -347,8 +347,30 @@ function reducer(state, action) {
       return { ...state, recordsLoading: !!action.loading };
 
     // ----- Config (sucursales)
-    case "CONFIG/LOAD":
-      return { ...state, configSucursales: action.configSucursales };
+    case "CONFIG/LOAD": {
+      const _defaultItems = {
+        electricidad:  { activo: false, subcats: [] },
+        combustible:   { activo: false, subcats: [] },
+        agua:          { activo: false, subcats: [] },
+        refrigerantes: { activo: false, subcats: [] },
+      };
+      const _norm = (s) => ({
+        ...s,
+        items: s.items ? {
+          electricidad:  { ..._defaultItems.electricidad,  ...s.items.electricidad  },
+          combustible:   { ..._defaultItems.combustible,   ...s.items.combustible   },
+          agua:          { ..._defaultItems.agua,           ...s.items.agua          },
+          refrigerantes: { ..._defaultItems.refrigerantes, ...s.items.refrigerantes },
+        } : _defaultItems,
+      });
+      // Keep any new sucursales added this session that aren't in the loaded data
+      const _loadedIds = new Set(action.configSucursales.map(s => s.id));
+      const _newEntries = state.configSucursales.filter(s => !_loadedIds.has(s.id));
+      return {
+        ...state,
+        configSucursales: [...action.configSucursales.map(_norm), ..._newEntries],
+      };
+    }
     case "CONFIG/EDIT_SUC":
       return { ...state, view: "config-edit", configEditId: action.id };
     case "CONFIG/TOGGLE_ACTIVE":
