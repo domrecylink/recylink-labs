@@ -605,6 +605,35 @@ function getProviderOptionsFor(state, sucursalName, type) {
   return out;
 }
 
+// Normaliza un número de cliente para comparar (quita guiones, espacios, etc.).
+function normNumCliente(s) {
+  return String(s || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Busca en la config qué sucursal/subcat/proveedor corresponde a un número de
+// cliente extraído de una factura. `type` (opcional) acota la búsqueda al tipo.
+// Devuelve { sucursal, type, subcat, provider } o null si no hay match.
+function resolveByNumCliente(state, numeroCliente, type) {
+  const target = normNumCliente(numeroCliente);
+  if (!target) return null;
+  const types = type ? [type] : ["electricidad", "combustible", "agua", "refrigerantes"];
+  for (const suc of (state?.configSucursales || [])) {
+    if (!suc.activa) continue;
+    for (const t of types) {
+      const item = suc.items?.[t];
+      if (!item || !item.activo) continue;
+      for (const sc of (item.subcats || [])) {
+        if (normNumCliente(sc.numCliente) !== target) continue;
+        let subcat = null;
+        if (t === "agua") { const opt = aguaSubcatFromConfig(sc); subcat = opt ? opt.id : null; }
+        else if (t === "combustible" || t === "refrigerantes") subcat = sc.tipo || null;
+        return { sucursal: suc.nombre, type: t, subcat, provider: _resolveProviderName(sc) };
+      }
+    }
+  }
+  return null;
+}
+
 function subcatLabel(type, id) {
   if (!id) return null;
   // Custom agua tipo: "otro:slug" — rebuild label from slug
@@ -627,4 +656,5 @@ Object.assign(window, {
   fmtCLP, fmtNum, fmtDate, monthLabelShort,
   periodToMonthKeys, periodLabel, subcatLabel, activeSucNames, getSubcatsFor,
   getConfiguredProvider, getProviderOptionsFor,
+  normNumCliente, resolveByNumCliente,
 });

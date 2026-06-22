@@ -106,12 +106,25 @@ const UploadStep2 = () => {
   }
 
   const goNext = () => {
-    // Flatten REAL extracted rows from all ready files into preview rows
+    // Flatten REAL extracted rows from all ready files into preview rows.
+    // Match el número de cliente extraído contra la config para autocompletar
+    // sucursal / subcategoría / proveedor.
     const rows = [];
     state.uploadQueue.forEach((f) => {
       if (f.status !== "ready" || !f.rows || !f.rows.length) return;
       f.rows.forEach((r) => {
-        rows.push({ id: nextId(), ...r });
+        const row = { id: nextId(), ...r };
+        if (!row.sucursal && row.numeroCliente) {
+          const match = resolveByNumCliente(state, row.numeroCliente, row.type);
+          if (match) {
+            row.sucursal = match.sucursal;
+            if (match.subcat && !row.subcat) row.subcat = match.subcat;
+            if (match.provider) row.provider = match.provider;
+            // Si quedó completo tras el match, súbelo a "ok".
+            if (row.date && row.cantidad) row.status = "ok";
+          }
+        }
+        rows.push(row);
       });
     });
     dispatch({ type: "UPLOAD/SET_PREVIEW_ROWS", rows });
