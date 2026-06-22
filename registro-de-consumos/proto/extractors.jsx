@@ -116,11 +116,13 @@ function rcExtraerAguas(textBundle) {
   const out = { numeroCliente: "", fecha: "", consumo: 0, costo: 0 };
 
   let mCli = texto.match(/Cuenta es:\s*\n*\s*([0-9\-]+)/i);
-  if (!mCli) mCli = texto.match(/cuenta[^\d]*([0-9]+-[0-9Kk])/i);
+  if (!mCli) mCli = texto.match(/cuenta[^\d]*([0-9\-]+)/i);
   if (!mCli) mCli = texto.match(/Nro de cuenta[^\d]*(\d+-[0-9Kk])/i);
   if (mCli) out.numeroCliente = mCli[1].trim();
 
-  const mFecha = texto.match(/VENCIMIENTO\s+(\d{2})-([A-Za-z]{3})-(\d{4})/i);
+  // Fecha: VENCIMIENTO → fallback LECTURA ACTUAL (igual que el notebook).
+  let mFecha = texto.match(/VENCIMIENTO\s+(\d{2})-([A-Za-z]{3})-(\d{4})/i);
+  if (!mFecha) mFecha = texto.match(/LECTURA ACTUAL\s+(\d{2})-([A-Za-z]{3})-(\d{4})/i);
   if (mFecha) {
     const meses = { ENE:"01", FEB:"02", MAR:"03", ABR:"04", MAY:"05", JUN:"06",
                     JUL:"07", AGO:"08", SEP:"09", OCT:"10", NOV:"11", DIC:"12" };
