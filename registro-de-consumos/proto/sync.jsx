@@ -130,17 +130,95 @@ function rcNum(v) {
   return isNaN(n) ? 0 : n;
 }
 
-// ----- Config persistence (configSucursales ↔ "Config" sheet) ------------
+// ----- Config persistence (configSucursales ↔ "Config Sucursales" sheet) --
+// Cada subcategoría es una fila; cada propiedad una columna. La app aplana al
+// guardar y reconstruye la estructura anidada al leer.
 
-async function rcReadConfig(key) {
-  if (!rcEndpointConfigured()) return null;
-  const data = await rcApiGet({ action: "getConfig", key });
-  return data && data.value != null ? data.value : null;
+const CONFIG_ITEM_TYPES = ["electricidad", "combustible", "agua", "refrigerantes"];
+
+// configSucursales (anidado) → filas planas (sin encabezado).
+function rcFlattenConfig(sucursales) {
+  const rows = [];
+  (sucursales || []).forEach((suc) => {
+    let pushed = false;
+    CONFIG_ITEM_TYPES.forEach((type) => {
+      const item = suc.items && suc.items[type];
+      if (!item || !item.activo) return;
+      (item.subcats || []).forEach((sc) => {
+        rows.push([
+          suc.id, suc.nombre, suc.direccion || "", suc.activa ? "Sí" : "No",
+          type, sc.id || "",
+          sc.sistemaElectrico || "",
+          sc.tipo || "",
+          sc.tipoCustom || "",
+          sc.uso || "",
+          sc.unidad || "",
+          sc.proveedor || "",
+          sc.proveedorCustom || "",
+          sc.numCliente || "",
+        ]);
+        pushed = true;
+      });
+    });
+    // Sucursal sin subcats activas → fila base para que persista igual.
+    if (!pushed) {
+      rows.push([suc.id, suc.nombre, suc.direccion || "", suc.activa ? "Sí" : "No",
+        "", "", "", "", "", "", "", "", "", ""]);
+    }
+  });
+  return rows;
 }
 
-async function rcWriteConfig(key, value) {
+// Filas planas (sin encabezado) → configSucursales (anidado).
+function rcUnflattenConfig(rows) {
+  const byId = new Map();
+  const order = [];
+  (rows || []).forEach((r) => {
+    const sucId = r[0];
+    if (!sucId) return;
+    if (!byId.has(sucId)) {
+      byId.set(sucId, {
+        id: sucId,
+        nombre: r[1] || "",
+        direccion: r[2] || "",
+        activa: String(r[3]).trim().toLowerCase() !== "no",
+        items: {
+          electricidad:  { activo: false, subcats: [] },
+          combustible:   { activo: false, subcats: [] },
+          agua:          { activo: false, subcats: [] },
+          refrigerantes: { activo: false, subcats: [] },
+        },
+      });
+      order.push(sucId);
+    }
+    const type = r[4];
+    if (!type) return; // fila base, sin subcat
+    const item = byId.get(sucId).items[type];
+    if (!item) return;
+    item.activo = true;
+    const sc = { id: r[5] || ("sc" + item.subcats.length) };
+    if (r[6])  sc.sistemaElectrico = r[6];
+    if (r[7])  sc.tipo = r[7];
+    if (r[8])  sc.tipoCustom = r[8];
+    if (r[9])  sc.uso = r[9];
+    if (r[10]) sc.unidad = r[10];
+    if (r[11]) sc.proveedor = r[11];
+    if (r[12]) sc.proveedorCustom = r[12];
+    if (r[13]) sc.numCliente = r[13];
+    item.subcats.push(sc);
+  });
+  return order.map((id) => byId.get(id));
+}
+
+async function rcReadConfigSucursales() {
+  if (!rcEndpointConfigured()) return [];
+  const data = await rcApiGet({ action: "getConfigSucursales" });
+  return rcUnflattenConfig((data && data.rows) || []);
+}
+
+async function rcWriteConfigSucursales(sucursales) {
   if (!rcEndpointConfigured()) return;
-  await rcApiPost({ action: "setConfig", key, value });
+  await rcApiPost({ action: "setConfigSucursales", rows: rcFlattenConfig(sucursales) });
 }
 
 // ----- Read all records ---------------------------------------------------
@@ -507,7 +585,7 @@ const SyncBootstrap = () => {
       await rcRefreshDashboard();
       // 2) Configuración de sucursales
       try {
-        const cfg = await rcReadConfig("configSucursales");
+        const cfg = await rcReadConfigSucursales();
         if (cfg && Array.isArray(cfg) && cfg.length > 0) {
           const { dispatch } = window.__rcStoreRef || {};
           if (dispatch) {
@@ -577,7 +655,7 @@ const StoreBridge = () => {
         return;
       }
       try {
-        await rcWriteConfig("configSucursales", app.state.configSucursales);
+        await rcWriteConfigSucursales(app.state.configSucursales);
         console.log("[rc-sync] configSucursales guardada:", app.state.configSucursales.length, "sucursal(es)");
       } catch (e) {
         console.error("[rc-sync] config save failed", e);
@@ -640,4 +718,5 @@ const SheetLink = () => null;
 Object.assign(window, {
   StoreBridge, SyncBootstrap, SyncToaster, SyncStatus, SheetLink, RC_CONFIG,
   rcReadConfig, rcWriteConfig,
+  rcReadConfigSucursales, rcWriteConfigSucursales, rcFlattenConfig, rcUnflattenConfig,
 });

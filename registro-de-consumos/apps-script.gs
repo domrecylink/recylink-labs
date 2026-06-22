@@ -65,6 +65,7 @@ function doGet(e) {
     const action = (e && e.parameter && e.parameter.action) || "read";
     if (action === "read") return jsonOut(readAll());
     if (action === "getConfig") return jsonOut(getConfigValue(e.parameter.key));
+    if (action === "getConfigSucursales") return jsonOut(getConfigSucursales());
     if (action === "ping") return jsonOut({ ok: true, pong: new Date().toISOString() });
     return jsonOut({ error: "unknown action: " + action });
   } catch (err) {
@@ -78,6 +79,10 @@ function doPost(e) {
     const action = body.action;
     if (action === "setConfig") {
       setConfigValue(body.key, body.value);
+      return jsonOut({ ok: true });
+    }
+    if (action === "setConfigSucursales") {
+      setConfigSucursales(body.rows || []);
       return jsonOut({ ok: true });
     }
     if (action === "append") {
@@ -206,4 +211,32 @@ function setConfigValue(key, value) {
     }
   }
   sheet.appendRow([key, json]);
+}
+
+// ----- Config sucursales (tabla relacional, una fila por subcategoría) ----
+
+var CONFIG_SUC_SHEET = "Config Sucursales";
+var CONFIG_SUC_HEADERS = [
+  "Sucursal ID", "Nombre", "Dirección", "Activa", "Tipo consumo", "Subcat ID",
+  "Sistema eléctrico", "Tipo", "Tipo (otro)", "Uso", "Unidad",
+  "Proveedor", "Proveedor (otro)", "N° cliente",
+];
+
+function getConfigSucursales() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(CONFIG_SUC_SHEET);
+  if (!sheet) return { rows: [] };
+  var data = sheet.getDataRange().getValues();
+  return { rows: data.slice(1) }; // sin encabezado
+}
+
+function setConfigSucursales(rows) {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(CONFIG_SUC_SHEET);
+  if (!sheet) sheet = ss.insertSheet(CONFIG_SUC_SHEET);
+  sheet.clear();
+  sheet.getRange(1, 1, 1, CONFIG_SUC_HEADERS.length).setValues([CONFIG_SUC_HEADERS]);
+  if (rows && rows.length) {
+    sheet.getRange(2, 1, rows.length, CONFIG_SUC_HEADERS.length).setValues(rows);
+  }
 }
