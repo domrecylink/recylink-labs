@@ -102,10 +102,6 @@ const ConfigView = () => {
         ))}
       </div>
 
-      <button className="ob-add-btn" onClick={() => dispatch({ type: "CONFIG/ADD_SUC" })}>
-        <Icon name="add" size={18} /><span>Agregar sucursal</span>
-      </button>
-
       {/* Deactivate confirmation */}
       {confirmModal?.type === "deactivate" && (
         <ConfirmDialog
