@@ -77,6 +77,8 @@ const PREV_MONTH_KEY    = months[months.length - 2] || CURRENT_MONTH_KEY;
 
 let __idCounter = 1;
 const nextId = () => "r" + (__idCounter++);
+let __entryIdC = 0;
+const nextEntryId = () => "ent" + (++__entryIdC);
 
 // ----- Initial state -----
 const initialState = {
@@ -108,14 +110,9 @@ const initialState = {
   toast: null,                // { id, kind, title, body, undoAction }
 };
 
-function emptyDraft() {
-  const today = new Date();
-  const iso = today.getFullYear() + "-" +
-              String(today.getMonth() + 1).padStart(2, "0") + "-" +
-              String(today.getDate()).padStart(2, "0");
+function emptyEntry() {
   return {
-    date: iso,
-    sucursal: "",
+    id: nextEntryId(),
     type: "",
     subcat: "",
     provider: "",
@@ -126,6 +123,18 @@ function emptyDraft() {
   };
 }
 
+function emptyDraft() {
+  const today = new Date();
+  const iso = today.getFullYear() + "-" +
+              String(today.getMonth() + 1).padStart(2, "0") + "-" +
+              String(today.getDate()).padStart(2, "0");
+  return {
+    date: iso,
+    sucursal: "",
+    entries: [emptyEntry()],
+  };
+}
+
 // ----- Reducer -----
 function reducer(state, action) {
   switch (action.type) {
@@ -133,17 +142,56 @@ function reducer(state, action) {
       return { ...state, view: action.view, manualStep: action.manualStep || state.manualStep, uploadStep: action.uploadStep || state.uploadStep };
 
     // ----- Manual draft
-    case "MANUAL/SET_FIELD": {
+    case "MANUAL/SET_SHARED_FIELD": {
       const draft = { ...state.manualDraft, [action.field]: action.value };
-      if (action.field === "type") draft.subcat = ""; // reset subcat when type changes
       const errors = { ...state.manualErrors };
       delete errors[action.field];
       return { ...state, manualDraft: draft, manualErrors: errors };
     }
+    case "MANUAL/SET_ENTRY_FIELD": {
+      const entries = state.manualDraft.entries.map(e => {
+        if (e.id !== action.entryId) return e;
+        const next = { ...e, [action.field]: action.value };
+        if (action.field === "type") next.subcat = "";
+        // Auto-fill provider from sucursal config when type/subcat change, only if empty
+        if ((action.field === "type" || action.field === "subcat") && !next.provider) {
+          const auto = getConfiguredProvider(state, state.manualDraft.sucursal, next.type, next.subcat);
+          if (auto) next.provider = auto;
+        }
+        return next;
+      });
+      // Clear per-entry error for that field
+      const entryErrors = { ...(state.manualErrors.entries || {}) };
+      if (entryErrors[action.entryId]) {
+        entryErrors[action.entryId] = { ...entryErrors[action.entryId] };
+        delete entryErrors[action.entryId][action.field];
+      }
+      return {
+        ...state,
+        manualDraft: { ...state.manualDraft, entries },
+        manualErrors: { ...state.manualErrors, entries: entryErrors },
+      };
+    }
+    case "MANUAL/ADD_ENTRY":
+      return { ...state, manualDraft: { ...state.manualDraft, entries: [...state.manualDraft.entries, emptyEntry()] } };
+    case "MANUAL/REMOVE_ENTRY": {
+      const entries = state.manualDraft.entries.filter(e => e.id !== action.entryId);
+      const safe = entries.length ? entries : [emptyEntry()];
+      const entryErrors = { ...(state.manualErrors.entries || {}) };
+      delete entryErrors[action.entryId];
+      try {
+        if (window.__rcManualFacturas) delete window.__rcManualFacturas[action.entryId];
+      } catch(e) {}
+      return {
+        ...state,
+        manualDraft: { ...state.manualDraft, entries: safe },
+        manualErrors: { ...state.manualErrors, entries: entryErrors },
+      };
+    }
     case "MANUAL/SET_ERRORS":
       return { ...state, manualErrors: action.errors };
     case "MANUAL/RESET":
-      try { window.__rcManualFactura = null; } catch(e) {}
+      try { window.__rcManualFacturas = {}; } catch(e) {}
       return { ...state, manualDraft: emptyDraft(), manualErrors: {}, manualStep: "form" };
     case "MANUAL/GO_PREVIEW":
       return { ...state, manualStep: "preview" };
@@ -151,24 +199,30 @@ function reducer(state, action) {
       return { ...state, manualStep: "form" };
     case "MANUAL/CONFIRM": {
       const d = state.manualDraft;
-      const newRec = {
+      const facturas = (typeof window !== "undefined") ? (window.__rcManualFacturas || {}) : {};
+      const newRecs = d.entries.map(e => ({
         id: nextId(),
         date: d.date,
         sucursal: d.sucursal,
-        type: d.type,
-        subcat: d.subcat || null,
-        provider: d.provider || "—",
-        cantidad: parseFloat(d.cantidad),
-        unit: TYPES[d.type].unit,
-        costo: parseFloat(d.costo) || 0,
+        type: e.type,
+        subcat: e.subcat || null,
+        provider: e.provider || "—",
+        cantidad: parseFloat(e.cantidad),
+        unit: TYPES[e.type].unit,
+        costo: parseFloat(e.costo) || 0,
         origen: "manual",
         estado: "activa",
-        factura: d.factura || null,
-      };
-      const factura = (typeof window !== "undefined") ? (window.__rcManualFactura || null) : null;
-      try { window.dispatchEvent(new CustomEvent("rc:confirm", { detail: { source: "manual", records: [newRec], factura } })); } catch(e) {}
-      try { window.__rcManualFactura = null; } catch(e) {}
-      return { ...state, records: [newRec, ...state.records], manualStep: "success", manualDraft: emptyDraft() };
+        factura: e.factura || null,
+        _entryId: e.id,
+      }));
+      const facturasList = newRecs
+        .map(r => facturas[r._entryId] ? { recordId: r.id, file: facturas[r._entryId].file, name: facturas[r._entryId].name } : null)
+        .filter(Boolean);
+      // strip _entryId before storing
+      const cleanRecs = newRecs.map(({ _entryId, ...r }) => r);
+      try { window.dispatchEvent(new CustomEvent("rc:confirm", { detail: { source: "manual", records: cleanRecs, facturas: facturasList } })); } catch(e) {}
+      try { window.__rcManualFacturas = {}; } catch(e) {}
+      return { ...state, records: [...cleanRecs, ...state.records], manualStep: "success", manualDraft: emptyDraft() };
     }
 
     // ----- Upload

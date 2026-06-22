@@ -1,49 +1,52 @@
-// Manual flow — form → preview → success
+// Manual flow — multi-entry: shared (fecha + sucursal) + N entries.
 
 // ---- Validation -----
 function validateManual(d, state) {
-  const errors = {};
-  if (!d.date) errors.date = "Indica la fecha del consumo.";
+  const errors = { entries: {} };
+  if (!d.date) errors.date = "Indica la fecha.";
   if (!d.sucursal) errors.sucursal = "Elige una sucursal.";
-  if (!d.type) errors.type = "Indica el tipo de consumo.";
-  if (d.type && getSubcatsFor(state, d.type).length > 0 && !d.subcat) {
-    errors.subcat = "Este tipo requiere subcategoría.";
-  }
-  if (!d.cantidad) errors.cantidad = "Ingresa la cantidad consumida.";
-  else if (isNaN(parseFloat(d.cantidad)) || parseFloat(d.cantidad) <= 0) errors.cantidad = "Debe ser un número mayor a 0.";
-  if (d.costo && (isNaN(parseFloat(d.costo)) || parseFloat(d.costo) < 0)) errors.costo = "Si lo indicas, debe ser un número ≥ 0.";
+  (d.entries || []).forEach((e) => {
+    const ee = {};
+    if (!e.type) ee.type = "Indica el tipo.";
+    if (e.type && getSubcatsFor(state, e.type).length > 0 && !e.subcat) ee.subcat = "Requiere subcategoría.";
+    if (!e.cantidad) ee.cantidad = "Ingresa la cantidad.";
+    else if (isNaN(parseFloat(e.cantidad)) || parseFloat(e.cantidad) <= 0) ee.cantidad = "Debe ser > 0.";
+    if (e.costo && (isNaN(parseFloat(e.costo)) || parseFloat(e.costo) < 0)) ee.costo = "Debe ser ≥ 0.";
+    if (Object.keys(ee).length) errors.entries[e.id] = ee;
+  });
+  // Compact: drop empty entries map
+  const hasShared = errors.date || errors.sucursal;
+  const hasEntry = Object.keys(errors.entries).length > 0;
+  if (!hasShared && !hasEntry) return {};
   return errors;
 }
 
-// Detect atypical: ±50% vs average of same sucursal/type
-function detectAnomaly(records, draft) {
-  if (!draft.sucursal || !draft.type || !draft.cantidad) return null;
+// Detect atypical: ±40% vs average of same sucursal/type/subcat
+function detectAnomaly(records, sucursal, entry) {
+  if (!sucursal || !entry.type || !entry.cantidad) return null;
   const same = records.filter(r =>
-    r.sucursal === draft.sucursal &&
-    r.type === draft.type &&
-    (draft.subcat ? r.subcat === draft.subcat : true)
+    r.estado !== "eliminada"
+    && r.sucursal === sucursal
+    && r.type === entry.type
+    && (entry.subcat ? r.subcat === entry.subcat : true)
   );
   if (same.length < 3) return null;
   const avg = same.reduce((a, r) => a + r.cantidad, 0) / same.length;
-  const cur = parseFloat(draft.cantidad);
+  const cur = parseFloat(entry.cantidad);
   const pct = ((cur - avg) / avg) * 100;
   if (Math.abs(pct) >= 40) {
-    return {
-      pct: Math.round(pct),
-      avg: Math.round(avg),
-      direction: pct > 0 ? "up" : "down",
-    };
+    return { pct: Math.round(pct), avg: Math.round(avg), direction: pct > 0 ? "up" : "down" };
   }
   return null;
 }
 
 // =========================================================
-// FacturaUpload — optional file picker for "Factura o boleta"
+// FacturaUpload — optional file picker
 // =========================================================
 const FacturaUpload = ({ filename, onPick }) => {
   const inputRef = React.useRef(null);
   return (
-    <Field label="Factura o boleta (opcional)" helper="PDF o imagen — se adjunta al registro de este consumo.">
+    <Field label="Factura o boleta (opcional)" helper="PDF o imagen — se adjunta a este consumo.">
       <input
         ref={inputRef}
         type="file"
@@ -90,48 +93,158 @@ const FacturaUpload = ({ filename, onPick }) => {
 };
 
 // =========================================================
+// EntryCard — one consumption in the batch
+// =========================================================
+const EntryCard = ({ entry, index, total, sucursal, errors, onRemove }) => {
+  const { state, dispatch } = useApp();
+  const setField = (field, value) => dispatch({ type: "MANUAL/SET_ENTRY_FIELD", entryId: entry.id, field, value });
+
+  const subcatOptions = entry.type ? getSubcatsFor(state, entry.type) : [];
+  const typeRequiresSubcat = entry.type && subcatOptions.length > 0;
+  const providerOptions = getProviderOptionsFor(state, sucursal, entry.type);
+  const t = entry.type ? TYPES[entry.type] : null;
+  const anomaly = detectAnomaly(state.records, sucursal, entry);
+  const ee = errors || {};
+
+  const onPickFactura = (file) => {
+    try {
+      if (!window.__rcManualFacturas) window.__rcManualFacturas = {};
+      if (file) window.__rcManualFacturas[entry.id] = { file, name: file.name };
+      else delete window.__rcManualFacturas[entry.id];
+    } catch (e) {}
+    setField("factura", file ? file.name : "");
+  };
+
+  return (
+    <Card style={{ marginBottom: 14 }}>
+      <div className="prt-spread" style={{ marginBottom: 14, alignItems: "center" }}>
+        <div className="prt-row" style={{ gap: 10 }}>
+          <span style={{
+            width: 26, height: 26, borderRadius: 7,
+            background: "var(--rl-primary-50)", color: "var(--rl-primary-900)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            font: "700 13px/1 var(--rl-font-display)",
+          }}>{index + 1}</span>
+          <div className="prt-h4">Consumo {index + 1}</div>
+          {t && <Chip size="sm"><TypeIndicator type={entry.type} /> {t.label}</Chip>}
+        </div>
+        {total > 1 && (
+          <Btn size="sm" kind="ghost" icon="delete" onClick={onRemove} title="Quitar este consumo">Quitar</Btn>
+        )}
+      </div>
+
+      <div className="prt-stack-md">
+        {/* Tipo + Subcat */}
+        <div style={{ display: "grid", gridTemplateColumns: typeRequiresSubcat ? "1fr 1fr" : "1fr", gap: 16 }}>
+          <Field label="Tipo de consumo" required error={ee.type}>
+            <Select
+              value={entry.type}
+              onChange={v => setField("type", v)}
+              options={Object.values(TYPES).map(tt => ({ value: tt.id, label: `${tt.label} (${tt.unit})` }))}
+              placeholder="Elige un tipo…"
+              error={!!ee.type}
+            />
+          </Field>
+          {typeRequiresSubcat && (
+            <Field label="Subcategoría" required error={ee.subcat}>
+              <Select
+                value={entry.subcat}
+                onChange={v => setField("subcat", v)}
+                options={subcatOptions.map(s => ({ value: s.id, label: s.label }))}
+                placeholder="Elige una subcategoría…"
+                error={!!ee.subcat}
+              />
+            </Field>
+          )}
+        </div>
+
+        {/* Cantidad + Costo */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <Field
+            label="Cantidad consumida" required
+            error={ee.cantidad}
+            helper={entry.type ? `Unidad: ${TYPES[entry.type].unit}` : "Elige primero el tipo."}
+          >
+            <Input
+              value={entry.cantidad}
+              onChange={v => setField("cantidad", v)}
+              placeholder="0"
+              suffix={entry.type ? TYPES[entry.type].unit : ""}
+              error={!!ee.cantidad}
+            />
+          </Field>
+          <Field label="Costo total (opcional)" error={ee.costo}>
+            <Input
+              value={entry.costo}
+              onChange={v => setField("costo", v)}
+              placeholder="0"
+              suffix="CLP"
+              error={!!ee.costo}
+            />
+          </Field>
+        </div>
+
+        {/* Proveedor + Notas */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <Field label="Proveedor (opcional)">
+            <Select
+              value={entry.provider}
+              onChange={v => setField("provider", v)}
+              options={entry.type ? providerOptions : []}
+              placeholder="Elige un proveedor…"
+            />
+          </Field>
+          <Field label="Notas (opcional)" helper={`${(entry.notes || "").length}/120`}>
+            <Input
+              value={entry.notes}
+              onChange={v => setField("notes", v.slice(0, 120))}
+              placeholder="Ej. Lectura tomada el día 28"
+            />
+          </Field>
+        </div>
+
+        {/* Factura */}
+        <FacturaUpload filename={entry.factura || ""} onPick={onPickFactura} />
+
+        {/* Anomaly */}
+        {anomaly && (
+          <div style={{
+            padding: 12, borderRadius: 10,
+            background: "var(--rl-warning-50)",
+            border: "1px solid var(--rl-warning-200)",
+            display: "flex", gap: 10, alignItems: "flex-start",
+          }}>
+            <Icon name="warning" size={18} style={{ color: "var(--rl-warning-700)", flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <div style={{ font: "600 12px/16px var(--rl-font-display)", color: "var(--rl-warning-700)" }}>
+                Consumo {anomaly.direction === "up" ? "más alto" : "más bajo"} de lo habitual
+              </div>
+              <div className="prt-hint" style={{ fontSize: 12, marginTop: 2, color: "var(--rl-warning-800)" }}>
+                {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. promedio {fmtNum(anomaly.avg)} {TYPES[entry.type].unit} en {sucursal}.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+};
+
+// =========================================================
 // FORM
 // =========================================================
 const ManualForm = () => {
   const { state, dispatch } = useApp();
   const d = state.manualDraft;
-  const e = state.manualErrors;
+  const errs = state.manualErrors || {};
+  const sharedSucursales = activeSucNames(state);
 
-  // Custom subcat dialog
-  const [showNewSubcat, setShowNewSubcat] = React.useState(false);
-  const [newSubcatLabel, setNewSubcatLabel] = React.useState("");
-
-  const set = (field, value) => dispatch({ type: "MANUAL/SET_FIELD", field, value });
-
-  const subcatOptions = d.type ? getSubcatsFor(state, d.type) : [];
-  const typeRequiresSubcat = d.type && subcatOptions.length > 0;
-  const providerOptions = getProviderOptionsFor(state, d.sucursal, d.type);
-
-  // Auto-fill provider from sucursal config when (sucursal, type, subcat) changes,
-  // only if the provider field is still empty (don't overwrite a user pick).
-  React.useEffect(() => {
-    if (d.provider) return;
-    const auto = getConfiguredProvider(state, d.sucursal, d.type, d.subcat);
-    if (auto) set("provider", auto);
-  }, [d.sucursal, d.type, d.subcat]);
+  const setShared = (field, value) => dispatch({ type: "MANUAL/SET_SHARED_FIELD", field, value });
 
   const onContinue = () => {
-    const errs = validateManual(d, state);
-    dispatch({ type: "MANUAL/SET_ERRORS", errors: errs });
-    if (Object.keys(errs).length === 0) {
-      dispatch({ type: "MANUAL/GO_PREVIEW" });
-    }
-  };
-
-  const createSubcat = () => {
-    const label = newSubcatLabel.trim();
-    if (!label) return;
-    const id = label.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    dispatch({ type: "SUBCAT/ADD", type: d.type, id, label });
-    set("subcat", id);
-    setShowNewSubcat(false);
-    setNewSubcatLabel("");
-    dispatch({ type: "TOAST/SHOW", toast: { kind: "success", title: "Subcategoría creada", body: `"${label}" ya está disponible en ${TYPES[d.type].label}.` } });
+    const e = validateManual(d, state);
+    dispatch({ type: "MANUAL/SET_ERRORS", errors: e });
+    if (Object.keys(e).length === 0) dispatch({ type: "MANUAL/GO_PREVIEW" });
   };
 
   return (
@@ -139,237 +252,68 @@ const ManualForm = () => {
       <SectionHead
         eyebrow="Registrar consumo · paso 1 de 2"
         title="Ingresa los datos del consumo"
-        sub="Completa los campos requeridos. Antes de guardar, podrás revisar el resumen."
-        right={<Btn kind="ghost" icon="arrow_back" onClick={() => dispatch({ type: "NAVIGATE", view: "landing" })}>Volver</Btn>}
+        sub="La fecha y sucursal aplican a todos los consumos del lote. Puedes agregar varios."
+        right={<Btn kind="ghost" icon="arrow_back" onClick={() => dispatch({ type: "NAVIGATE", view: "register" })}>Volver</Btn>}
       />
 
       <div style={{ marginBottom: 22 }}>
         <Steps items={["Datos", "Revisar", "Listo"]} current={0} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24 }}>
-
-        {/* FORM CARD */}
-        <Card>
-          <div className="prt-stack-md">
-
-            {/* Row 1: Fecha + Sucursal */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Field label="Fecha del consumo" required error={e.date}>
-                <Input type="date" value={d.date} onChange={v => set("date", v)} />
-              </Field>
-              <Field label="Sucursal" required error={e.sucursal}>
-                <Select
-                  value={d.sucursal}
-                  onChange={v => set("sucursal", v)}
-                  options={activeSucNames(state)}
-                  placeholder="Elige una sucursal…"
-                  error={!!e.sucursal}
-                />
-              </Field>
-            </div>
-
-            {/* Row 2: Tipo + Subcat (subcat aparece sólo si el tipo lo requiere) */}
-            <div style={{ display: "grid", gridTemplateColumns: typeRequiresSubcat ? "1fr 1fr" : "1fr", gap: 16 }}>
-              <Field label="Tipo de consumo" required error={e.type}>
-                <Select
-                  value={d.type}
-                  onChange={v => set("type", v)}
-                  options={Object.values(TYPES).map(t => ({ value: t.id, label: `${t.label} (${t.unit})` }))}
-                  placeholder="Elige un tipo…"
-                  error={!!e.type}
-                />
-              </Field>
-              {typeRequiresSubcat && (
-                <Field
-                  label="Subcategoría"
-                  required
-                  error={e.subcat}
-                  helper={!e.subcat ? "Misma unidad del tipo padre — comparable en el dashboard." : null}
-                >
-                  <div className="prt-row" style={{ gap: 8 }}>
-                    <Select
-                      value={d.subcat}
-                      onChange={v => set("subcat", v)}
-                      options={subcatOptions.map(s => ({ value: s.id, label: s.label }))}
-                      placeholder="Elige una subcategoría…"
-                      error={!!e.subcat}
-                      style={{ flex: 1 }}
-                    />
-                    <Btn size="sm" icon="add" onClick={() => setShowNewSubcat(true)}>Nueva</Btn>
-                  </div>
-                </Field>
-              )}
-            </div>
-
-            {/* Inline "new subcat" panel */}
-            {showNewSubcat && (
-              <div style={{
-                padding: 14, borderRadius: 10,
-                border: "1.5px solid var(--rl-primary-200)",
-                background: "var(--rl-primary-50)",
-              }}>
-                <div className="prt-spread" style={{ marginBottom: 10 }}>
-                  <div>
-                    <div className="prt-eyebrow" style={{ color: "var(--rl-primary-900)" }}>Crear subcategoría</div>
-                    <div className="prt-h4">Para {TYPES[d.type].label}</div>
-                  </div>
-                  <button onClick={() => setShowNewSubcat(false)} style={{ all: "unset", cursor: "pointer", color: "var(--rl-gray-500)" }}>
-                    <Icon name="close" size={20} />
-                  </button>
-                </div>
-                <div className="prt-row" style={{ alignItems: "flex-end", gap: 12 }}>
-                  <Field label="Nombre" style={{ flex: 1 }}>
-                    <Input value={newSubcatLabel} onChange={setNewSubcatLabel} placeholder="Ej. Biodiésel" autoFocus />
-                  </Field>
-                  <Field label="Unidad" style={{ width: 140 }}>
-                    <Input value={`${TYPES[d.type].unit} (heredado)`} onChange={() => {}} />
-                  </Field>
-                  <Btn onClick={() => setShowNewSubcat(false)}>Cancelar</Btn>
-                  <Btn kind="primary" onClick={createSubcat} disabled={!newSubcatLabel.trim()}>Crear</Btn>
-                </div>
-              </div>
-            )}
-
-            {/* Row 3: Cantidad + Costo */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Field
-                label="Cantidad consumida"
-                required
-                error={e.cantidad}
-                helper={d.type ? `Unidad: ${TYPES[d.type].unit}` : "Elige primero el tipo de consumo."}
-              >
-                <Input
-                  value={d.cantidad}
-                  onChange={v => set("cantidad", v)}
-                  placeholder="0"
-                  suffix={d.type ? TYPES[d.type].unit : ""}
-                  error={!!e.cantidad}
-                />
-              </Field>
-              <Field
-                label="Costo total (opcional)"
-                error={e.costo}
-                helper="Si lo dejas en blanco, lo podrás agregar después."
-              >
-                <Input
-                  value={d.costo}
-                  onChange={v => set("costo", v)}
-                  placeholder="0"
-                  suffix="CLP"
-                  error={!!e.costo}
-                />
-              </Field>
-            </div>
-
-            {/* Row 4: Proveedor + Notas */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <Field label="Proveedor (opcional)">
-                <Select
-                  value={d.provider}
-                  onChange={v => set("provider", v)}
-                  options={d.type ? providerOptions : []}
-                  placeholder="Elige un proveedor…"
-                />
-              </Field>
-              <Field label="Notas (opcional)" helper={`${(d.notes || "").length}/120`}>
-                <Input
-                  value={d.notes}
-                  onChange={v => set("notes", v.slice(0, 120))}
-                  placeholder="Ej. Lectura tomada el día 28"
-                />
-              </Field>
-            </div>
-
-            {/* Row 5: Factura o boleta (opcional) — un archivo por registro */}
-            <FacturaUpload
-              filename={d.factura || ""}
-              onPick={(file) => {
-                window.__rcManualFactura = file ? { file, name: file.name } : null;
-                set("factura", file ? file.name : "");
-              }}
+      {/* Shared fields */}
+      <Card style={{ marginBottom: 18 }}>
+        <div className="prt-eyebrow" style={{ marginBottom: 12 }}>Datos compartidos del lote</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <Field label="Fecha del consumo" required error={errs.date}>
+            <Input type="date" value={d.date} onChange={v => setShared("date", v)} />
+          </Field>
+          <Field label="Sucursal" required error={errs.sucursal}>
+            <Select
+              value={d.sucursal}
+              onChange={v => setShared("sucursal", v)}
+              options={sharedSucursales}
+              placeholder="Elige una sucursal…"
+              error={!!errs.sucursal}
             />
+          </Field>
+        </div>
+      </Card>
 
-          </div>
-        </Card>
+      {/* Entries */}
+      {d.entries.map((entry, i) => (
+        <EntryCard
+          key={entry.id}
+          entry={entry}
+          index={i}
+          total={d.entries.length}
+          sucursal={d.sucursal}
+          errors={errs.entries?.[entry.id]}
+          onRemove={() => dispatch({ type: "MANUAL/REMOVE_ENTRY", entryId: entry.id })}
+        />
+      ))}
 
-        {/* SIDE: live preview / hints */}
-        <SidePreview draft={d} />
-      </div>
+      <button
+        onClick={() => dispatch({ type: "MANUAL/ADD_ENTRY" })}
+        className="rc-manual-add-entry"
+      >
+        <Icon name="add" size={18} />
+        <span>Agregar otro consumo</span>
+      </button>
 
       <div className="prt-spread" style={{ marginTop: 22 }}>
         <Btn kind="ghost" onClick={() => { dispatch({ type: "MANUAL/RESET" }); dispatch({ type: "NAVIGATE", view: "landing" }); }}>
           Cancelar
         </Btn>
         <div className="prt-row">
-          <Btn onClick={() => dispatch({ type: "MANUAL/RESET" })}>Limpiar formulario</Btn>
-          <Btn kind="primary" iconRight="arrow_forward" onClick={onContinue}>Revisar antes de guardar</Btn>
+          <Btn onClick={() => dispatch({ type: "MANUAL/RESET" })}>Limpiar todo</Btn>
+          <Btn kind="primary" iconRight="arrow_forward" onClick={onContinue}>
+            Revisar {d.entries.length} consumo{d.entries.length !== 1 ? "s" : ""}
+          </Btn>
         </div>
       </div>
     </div>
   );
 };
-
-// Live preview to the right of the form
-const SidePreview = ({ draft }) => {
-  const { state } = useApp();
-  const t = draft.type ? TYPES[draft.type] : null;
-  const sub = draft.type && draft.subcat ? subcatLabel(draft.type, draft.subcat) : null;
-  const anomaly = detectAnomaly(state.records, draft);
-
-  return (
-    <div className="prt-stack-md">
-      <Card>
-        <div className="prt-eyebrow" style={{ marginBottom: 8 }}>Vista previa</div>
-        <div className="prt-stack-sm">
-          <PrevRow label="Fecha" value={draft.date ? fmtDate(draft.date) : <em style={{ color: "var(--rl-gray-400)" }}>Sin definir</em>} />
-          <PrevRow label="Sucursal" value={draft.sucursal || <em style={{ color: "var(--rl-gray-400)" }}>Sin definir</em>} />
-          <PrevRow label="Tipo" value={t ? <span className="prt-row" style={{ gap: 6 }}><TypeIndicator type={draft.type} /> {t.label}</span> : <em style={{ color: "var(--rl-gray-400)" }}>Sin definir</em>} />
-          {t && INITIAL_SUBCATS[draft.type].length > 0 && (
-            <PrevRow label="Subcategoría" value={sub || <em style={{ color: "var(--rl-gray-400)" }}>—</em>} />
-          )}
-          <PrevRow label="Cantidad" value={draft.cantidad ? <strong>{fmtNum(parseFloat(draft.cantidad))} {t?.unit || ""}</strong> : <em style={{ color: "var(--rl-gray-400)" }}>0</em>} />
-          <PrevRow label="Costo" value={draft.costo ? <strong>{fmtCLP(parseFloat(draft.costo))}</strong> : <em style={{ color: "var(--rl-gray-400)" }}>—</em>} />
-          {draft.factura && (
-            <PrevRow label="Factura" value={
-              <span className="prt-row" style={{ gap: 4 }}>
-                <Icon name="picture_as_pdf" size={14} style={{ color: "var(--rl-primary-900)" }} />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{draft.factura}</span>
-              </span>
-            } />
-          )}
-        </div>
-      </Card>
-
-      {/* Anomaly hint */}
-      {anomaly && (
-        <div style={{
-          padding: 14, borderRadius: 12,
-          background: "var(--rl-warning-50)",
-          border: "1px solid var(--rl-warning-200)",
-          display: "flex", gap: 10,
-        }}>
-          <Icon name="warning" size={22} style={{ color: "var(--rl-warning-700)", flexShrink: 0 }} />
-          <div>
-            <div style={{ font: "600 13px/18px var(--rl-font-display)", color: "var(--rl-warning-700)" }}>
-              Consumo {anomaly.direction === "up" ? "más alto" : "más bajo"} de lo habitual
-            </div>
-            <div className="prt-hint" style={{ marginTop: 4, color: "var(--rl-warning-800)" }}>
-              Está {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. el promedio de {fmtNum(anomaly.avg)} {TYPES[draft.type].unit} de esta sucursal. Podrás confirmar en el siguiente paso.
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const PrevRow = ({ label, value }) => (
-  <div className="prt-spread" style={{ gap: 8 }}>
-    <span className="prt-hint">{label}</span>
-    <span style={{ font: "500 13px/18px var(--rl-font-body)", color: "var(--rl-gray-900)", textAlign: "right" }}>{value}</span>
-  </div>
-);
 
 // =========================================================
 // PREVIEW (paso 2)
@@ -377,15 +321,13 @@ const PrevRow = ({ label, value }) => (
 const ManualPreview = () => {
   const { state, dispatch } = useApp();
   const d = state.manualDraft;
-  const t = TYPES[d.type];
-  const sub = d.subcat ? subcatLabel(d.type, d.subcat) : null;
-  const anomaly = detectAnomaly(state.records, d);
+  const totalCost = d.entries.reduce((a, e) => a + (parseFloat(e.costo) || 0), 0);
 
   return (
     <div>
       <SectionHead
         eyebrow="Registrar consumo · paso 2 de 2"
-        title="Revisa antes de guardar"
+        title={`Revisa ${d.entries.length} consumo${d.entries.length !== 1 ? "s" : ""}`}
         sub="Si todo está correcto, guarda. También puedes volver a editar."
         right={<Btn kind="ghost" icon="arrow_back" onClick={() => dispatch({ type: "MANUAL/GO_FORM" })}>Editar datos</Btn>}
       />
@@ -393,54 +335,82 @@ const ManualPreview = () => {
         <Steps items={["Datos", "Revisar", "Listo"]} current={1} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        <Card>
-          <div className="prt-eyebrow" style={{ marginBottom: 12 }}>Resumen del registro</div>
-          <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", rowGap: 14, columnGap: 16, alignItems: "center" }}>
-            <span className="prt-hint">Fecha</span>             <span style={{ font: "600 14px/1 var(--rl-font-display)" }}>{fmtDate(d.date)}</span>
-            <span className="prt-hint">Sucursal</span>          <span>{d.sucursal}</span>
-            <span className="prt-hint">Tipo</span>              <span className="prt-row" style={{ gap: 8 }}><TypeIndicator type={d.type} /> {t.label}</span>
-            {sub && (<><span className="prt-hint">Subcategoría</span><span><Chip>{sub}</Chip></span></>)}
-            <span className="prt-hint">Cantidad</span>          <span style={{ font: "700 22px/26px var(--rl-font-display)", color: "var(--rl-gray-900)" }}>{fmtNum(parseFloat(d.cantidad))} <span style={{ font: "600 14px/1 var(--rl-font-display)", color: "var(--rl-gray-500)" }}>{t.unit}</span></span>
-            <span className="prt-hint">Costo</span>             <span style={{ font: "700 16px/22px var(--rl-font-display)" }}>{d.costo ? fmtCLP(parseFloat(d.costo)) : <em style={{ color: "var(--rl-gray-400)" }}>—</em>}</span>
-            <span className="prt-hint">Proveedor</span>         <span>{d.provider || <em style={{ color: "var(--rl-gray-400)" }}>—</em>}</span>
-            {d.factura && (<><span className="prt-hint">Factura</span><span className="prt-row" style={{ gap: 6 }}><Icon name="picture_as_pdf" size={16} style={{ color: "var(--rl-primary-900)" }} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.factura}</span></span></>)}
-            {d.notes && (<><span className="prt-hint">Notas</span><span style={{ color: "var(--rl-gray-700)" }}>{d.notes}</span></>)}
+      {/* Shared header */}
+      <Card style={{ marginBottom: 14 }}>
+        <div className="prt-eyebrow" style={{ marginBottom: 10 }}>Datos del lote</div>
+        <div className="prt-row" style={{ gap: 28, flexWrap: "wrap" }}>
+          <div>
+            <div className="prt-hint">Fecha</div>
+            <div style={{ font: "600 15px/1 var(--rl-font-display)", marginTop: 2 }}>{fmtDate(d.date)}</div>
           </div>
-        </Card>
+          <div>
+            <div className="prt-hint">Sucursal</div>
+            <div style={{ font: "600 15px/1 var(--rl-font-display)", marginTop: 2 }}>{d.sucursal}</div>
+          </div>
+          <div>
+            <div className="prt-hint">Consumos</div>
+            <div style={{ font: "600 15px/1 var(--rl-font-display)", marginTop: 2 }}>{d.entries.length}</div>
+          </div>
+          {totalCost > 0 && (
+            <div>
+              <div className="prt-hint">Costo total</div>
+              <div style={{ font: "700 15px/1 var(--rl-font-display)", marginTop: 2 }}>{fmtCLP(totalCost)}</div>
+            </div>
+          )}
+        </div>
+      </Card>
 
-        <div className="prt-stack-md">
-          {anomaly && (
-            <Card style={{ background: "var(--rl-warning-50)", boxShadow: "none", border: "1px solid var(--rl-warning-200)" }}>
-              <div className="prt-row" style={{ gap: 10, alignItems: "flex-start" }}>
-                <Icon name="warning" style={{ color: "var(--rl-warning-700)", flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <div className="prt-h4" style={{ color: "var(--rl-warning-800)" }}>Detectamos un valor atípico</div>
-                  <div className="prt-muted" style={{ marginTop: 6, color: "var(--rl-warning-800)" }}>
-                    Esta cantidad está <strong>{anomaly.pct > 0 ? "+" : ""}{anomaly.pct}%</strong> vs. el promedio histórico
-                    ({fmtNum(anomaly.avg)} {t.unit}) de <strong>{d.sucursal}</strong>. Si es correcto,
-                    confirma. Si no, vuelve y corrige.
-                  </div>
+      {/* Per-entry summary */}
+      <div className="prt-stack-md">
+        {d.entries.map((e, i) => {
+          const t = TYPES[e.type];
+          const sub = e.subcat ? subcatLabel(e.type, e.subcat) : null;
+          const anomaly = detectAnomaly(state.records, d.sucursal, e);
+          return (
+            <Card key={e.id}>
+              <div className="prt-row" style={{ gap: 14, alignItems: "center", marginBottom: 12 }}>
+                <span style={{
+                  width: 26, height: 26, borderRadius: 7,
+                  background: "var(--rl-primary-50)", color: "var(--rl-primary-900)",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  font: "700 13px/1 var(--rl-font-display)",
+                }}>{i + 1}</span>
+                <div className="prt-row" style={{ gap: 8 }}>
+                  <TypeIndicator type={e.type} /> <strong>{t?.label}</strong>
+                  {sub && <Chip size="sm">{sub}</Chip>}
+                </div>
+                <div style={{ marginLeft: "auto", font: "700 18px/1 var(--rl-font-display)" }}>
+                  {fmtNum(parseFloat(e.cantidad))} <span style={{ font: "600 13px/1 var(--rl-font-display)", color: "var(--rl-gray-500)" }}>{t?.unit}</span>
                 </div>
               </div>
+              <div className="prt-row" style={{ gap: 28, flexWrap: "wrap" }}>
+                <div><span className="prt-hint">Proveedor: </span><span>{e.provider || "—"}</span></div>
+                <div><span className="prt-hint">Costo: </span><span>{e.costo ? fmtCLP(parseFloat(e.costo)) : "—"}</span></div>
+                {e.factura && (
+                  <div>
+                    <span className="prt-hint">Factura: </span>
+                    <span className="prt-row" style={{ gap: 4, display: "inline-flex" }}>
+                      <Icon name="picture_as_pdf" size={14} style={{ color: "var(--rl-primary-900)" }} />
+                      <span>{e.factura}</span>
+                    </span>
+                  </div>
+                )}
+                {e.notes && <div><span className="prt-hint">Notas: </span><span>{e.notes}</span></div>}
+              </div>
+              {anomaly && (
+                <div style={{ marginTop: 10, color: "var(--rl-warning-700)", font: "500 12px/16px var(--rl-font-body)" }}>
+                  ⚠ Valor atípico: {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. promedio {fmtNum(anomaly.avg)} {t?.unit}.
+                </div>
+              )}
             </Card>
-          )}
-
-          <Card bordered>
-            <div className="prt-h4" style={{ marginBottom: 8 }}>¿Qué pasa al guardar?</div>
-            <ul style={{ margin: 0, paddingLeft: 18, color: "var(--rl-gray-600)", font: "500 13px/20px var(--rl-font-body)" }}>
-              <li>Se agrega 1 registro a la tabla de consumos.</li>
-              <li>El dashboard refleja el cambio al instante.</li>
-              <li>Podrás editarlo o eliminarlo desde la tabla detallada.</li>
-            </ul>
-          </Card>
-        </div>
+          );
+        })}
       </div>
 
       <div className="prt-spread" style={{ marginTop: 22 }}>
         <Btn icon="arrow_back" onClick={() => dispatch({ type: "MANUAL/GO_FORM" })}>Volver a editar</Btn>
         <Btn kind="primary" icon="check" onClick={() => dispatch({ type: "MANUAL/CONFIRM" })}>
-          Confirmar y guardar
+          Confirmar y guardar {d.entries.length} consumo{d.entries.length !== 1 ? "s" : ""}
         </Btn>
       </div>
     </div>
@@ -452,15 +422,14 @@ const ManualPreview = () => {
 // =========================================================
 const ManualSuccess = () => {
   const { state, dispatch } = useApp();
-  // Most recently added record
-  const last = state.records[0];
-  const t = last ? TYPES[last.type] : null;
-
+  // After CONFIRM, the last batch is at the head of records. We don't know exact size — fallback to 1.
+  // To know exact, we'd need to read manualDraft.entries.length before reset — but reset already ran.
+  // The records currently in state may include the new batch — count those with origen==="manual" and the latest date in head until origen changes? Simpler: just say "registros guardados".
   return (
     <div>
       <SectionHead
         eyebrow="Registrar consumo"
-        title="Registro guardado"
+        title="Lote guardado"
         right={<Btn kind="ghost" icon="dashboard" onClick={() => dispatch({ type: "NAVIGATE", view: "dashboard" })}>Ver en dashboard</Btn>}
       />
       <div style={{ marginBottom: 22 }}>
@@ -477,20 +446,18 @@ const ManualSuccess = () => {
             <Icon name="check_circle" size={32} fill />
           </div>
           <div className="prt-grow">
-            <div className="prt-h2">Listo, agregamos tu consumo</div>
+            <div className="prt-h2">Listo, registramos tus consumos</div>
             <div className="prt-muted" style={{ marginTop: 4 }}>
-              {last && (
-                <>{t.label}{last.subcat ? ` · ${subcatLabel(last.type, last.subcat)}` : ""} · {fmtNum(last.cantidad)} {last.unit} · {last.sucursal} · {fmtDate(last.date)}</>
-              )}
+              Los registros se agregaron a la tabla y se reflejan en el dashboard.
             </div>
           </div>
-          <Chip kind="success" icon="check">1 registro agregado</Chip>
+          <Chip kind="success" icon="check">Lote guardado</Chip>
         </div>
       </Card>
 
       <div className="prt-row" style={{ marginTop: 22, gap: 12 }}>
         <Btn kind="primary" icon="add" onClick={() => { dispatch({ type: "MANUAL/RESET" }); dispatch({ type: "NAVIGATE", view: "manual", manualStep: "form" }); }}>
-          Registrar otro consumo
+          Registrar otro lote
         </Btn>
         <Btn icon="cloud_upload" onClick={() => dispatch({ type: "NAVIGATE", view: "upload", uploadStep: 1 })}>
           Subir un documento
@@ -513,4 +480,4 @@ const ManualView = () => {
   return <ManualForm />;
 };
 
-Object.assign(window, { ManualView, ManualForm, ManualPreview, ManualSuccess, FacturaUpload });
+Object.assign(window, { ManualView, ManualForm, ManualPreview, ManualSuccess, EntryCard, FacturaUpload });

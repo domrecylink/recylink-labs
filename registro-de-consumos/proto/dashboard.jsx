@@ -72,14 +72,32 @@ function kpiAggregates(state) {
   };
 }
 
-// Aggregate filtered records by (subcat, month) — for multi-line chart
+// ---- Unit helpers (combustible mixed-unit split) -----------------------
+const FUEL_UNIT_CATEGORY = {
+  L: "Volumen", gal: "Volumen", "m³": "Volumen",
+  kg: "Masa", t: "Masa",
+  kWh: "Energía",
+};
+function unitOfSubcat(type, subId) {
+  if (type !== "combustible") return TYPES[type]?.unit || "";
+  const c = (typeof FUEL_SUBCATS_CATALOG !== "undefined") ? FUEL_SUBCATS_CATALOG[subId] : null;
+  return c ? c.defaultUnit : "";
+}
+function unitBlockLabel(unit) {
+  const cat = FUEL_UNIT_CATEGORY[unit];
+  return cat ? cat + " · " + unit : unit;
+}
+
+// Aggregate filtered records by (subcat, month) — for multi-line chart.
+// When typeTab=combustible AND subcat=all AND active subcats span multiple units,
+// returns { mixed: true, blocks: [{ unit, label, series }, ...] }.
+// Otherwise: { mixed: false, months, series, unit }.
 function chartDataByMonthAndSubcat(state) {
-  const { typeTab, period } = state.dashFilters;
+  const { typeTab, period, subcat } = state.dashFilters;
   const monthKeys = periodToMonthKeys(period);
   const type = TYPES[typeTab];
   const subs = getSubcatsFor(state, typeTab);
 
-  // Records filtered by sucursal + type (NOT by subcat — we plot all)
   const { sucursal } = state.dashFilters;
   const recs = state.records.filter(r => {
     if (r.estado === "eliminada") return false;
@@ -90,33 +108,46 @@ function chartDataByMonthAndSubcat(state) {
     return true;
   });
 
-  if (subs.length === 0) {
-    // No subcat — single series
-    const series = [{
-      key: typeTab, label: type.label,
-      color: type.color,
-      data: monthKeys.map(mk => recs.filter(r => r.date.startsWith(mk)).reduce((a, r) => a + r.cantidad, 0)),
-    }];
-    return { months: monthKeys, series, unit: type.unit };
+  const COLORS = [type.color, "var(--rl-primary-900)", "var(--rl-success-600)", "var(--rl-error-500)", "var(--rl-warning-700)", "var(--rl-gray-700)"];
+  const buildSeries = (subList) => {
+    if (subList.length === 0) {
+      return [{
+        key: typeTab, label: type.label,
+        color: type.color,
+        data: monthKeys.map(mk => recs.filter(r => r.date.startsWith(mk)).reduce((a, r) => a + r.cantidad, 0)),
+      }];
+    }
+    return subList.map((sub, i) => ({
+      key: sub.id, label: sub.label, unit: unitOfSubcat(typeTab, sub.id),
+      color: COLORS[i % COLORS.length],
+      dashed: i >= COLORS.length,
+      data: monthKeys.map(mk =>
+        recs.filter(r => r.date.startsWith(mk) && r.subcat === sub.id).reduce((a, r) => a + r.cantidad, 0)
+      ),
+    }));
+  };
+
+  if (typeTab === "combustible" && subcat === "all") {
+    const unitsBySub = subs.map(s => ({ sub: s, unit: unitOfSubcat("combustible", s.id) })).filter(x => x.unit);
+    const uniqUnits = [...new Set(unitsBySub.map(x => x.unit))];
+    if (uniqUnits.length > 1) {
+      const blocks = uniqUnits.map(u => {
+        const subList = unitsBySub.filter(x => x.unit === u).map(x => x.sub);
+        return { unit: u, label: unitBlockLabel(u), series: buildSeries(subList) };
+      });
+      return { mixed: true, months: monthKeys, blocks };
+    }
   }
 
-  const colors = [type.color, "var(--rl-primary-900)", "var(--rl-success-600)", "var(--rl-error-500)"];
-  const series = subs.map((sub, i) => ({
-    key: sub.id, label: sub.label,
-    color: colors[i % colors.length],
-    dashed: i >= 2,
-    data: monthKeys.map(mk =>
-      recs.filter(r => r.date.startsWith(mk) && r.subcat === sub.id).reduce((a, r) => a + r.cantidad, 0)
-    ),
-  }));
-  return { months: monthKeys, series, unit: type.unit };
+  return { mixed: false, months: monthKeys, series: buildSeries(subs), unit: type.unit };
 }
 
-// Heatmap data: row=sucursal, col=month, value=qty for active type+subcat+period (no sucursal filter)
+// Heatmap data: row=sucursal, col=month, value=qty for active type+subcat+period.
+// Same mixed-unit split contract as chartDataByMonthAndSubcat.
 function heatmapData(state) {
   const { typeTab, period, subcat } = state.dashFilters;
   const monthKeys = periodToMonthKeys(period);
-  const recs = state.records.filter(r => {
+  const baseRecs = state.records.filter(r => {
     if (r.estado === "eliminada") return false;
     if (r.type !== typeTab) return false;
     const mk = r.date.slice(0, 7);
@@ -124,11 +155,25 @@ function heatmapData(state) {
     if (subcat !== "all" && r.subcat !== subcat) return false;
     return true;
   });
-  const rows = activeSucNames(state).map(suc => ({
+  const buildRows = (recs) => activeSucNames(state).map(suc => ({
     suc,
     cells: monthKeys.map(mk => recs.filter(r => r.sucursal === suc && r.date.startsWith(mk)).reduce((a, r) => a + r.cantidad, 0)),
   }));
-  return { months: monthKeys, rows };
+
+  if (typeTab === "combustible" && subcat === "all") {
+    const subs = getSubcatsFor(state, typeTab);
+    const unitsBySub = subs.map(s => ({ sub: s, unit: unitOfSubcat("combustible", s.id) })).filter(x => x.unit);
+    const uniqUnits = [...new Set(unitsBySub.map(x => x.unit))];
+    if (uniqUnits.length > 1) {
+      const blocks = uniqUnits.map(u => {
+        const subIds = unitsBySub.filter(x => x.unit === u).map(x => x.sub.id);
+        const recs = baseRecs.filter(r => subIds.includes(r.subcat));
+        return { unit: u, label: unitBlockLabel(u), months: monthKeys, rows: buildRows(recs) };
+      });
+      return { mixed: true, blocks };
+    }
+  }
+  return { mixed: false, months: monthKeys, rows: buildRows(baseRecs) };
 }
 
 // ============================================================
@@ -241,8 +286,8 @@ const MultiLineChart = ({ months: monthArr, series, unit, h = 220 }) => {
           {series.map((s, si) => (
             <div key={si} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
               <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: s.color, flexShrink: 0 }} />
-              <span style={{ flex: 1, opacity: 0.9 }}>{s.label}</span>
-              <strong style={{ marginLeft: 8 }}>{fmtNum(s.data[hoverIdx])} {unit}</strong>
+              <span style={{ flex: 1, opacity: 0.9 }}>{s.label}{s.unit && s.unit !== unit ? " (" + s.unit + ")" : ""}</span>
+              <strong style={{ marginLeft: 8 }}>{fmtNum(s.data[hoverIdx])} {s.unit || unit}</strong>
             </div>
           ))}
         </div>
@@ -257,8 +302,8 @@ const MultiLineChart = ({ months: monthArr, series, unit, h = 220 }) => {
                 display: "inline-block", width: 18, height: 0,
                 borderTop: "2.5px " + (s.dashed ? "dashed" : "solid") + " " + s.color,
               }}></span>
-              <span style={{ font: "600 12px/1 var(--rl-font-display)", color: "var(--rl-gray-800)" }}>{s.label}</span>
-              <span className="prt-hint" style={{ fontSize: 11 }}>· {fmtNum(total)} {unit}</span>
+              <span style={{ font: "600 12px/1 var(--rl-font-display)", color: "var(--rl-gray-800)" }}>{s.label}{s.unit ? " (" + s.unit + ")" : ""}</span>
+              <span className="prt-hint" style={{ fontSize: 11 }}>· {fmtNum(total)} {s.unit || unit}</span>
             </div>
           );
         })}
@@ -854,28 +899,68 @@ const Dashboard = () => {
       <Card flush style={{ marginBottom: 18 }}>
         <TypeTabs />
         <SubcatPills />
-        <div style={{ padding: "20px 22px 22px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 28 }}>
-          <div>
-            <div className="prt-spread" style={{ marginBottom: 8 }}>
-              <div>
-                <div className="prt-h3">Tendencia por subcategoría</div>
-                <div className="prt-hint">{tt.unit} / mes · {periodLabel(state.dashFilters.period)}</div>
-              </div>
-              <Chip>{tt.unit}</Chip>
-            </div>
-            <MultiLineChart months={chart.months} series={chart.series} unit={chart.unit} />
+        {(chart.mixed || heat.mixed) && (
+          <div className="prt-mixed-units-notice">
+            <Icon name="info" size={14} />
+            <span>Las subcategorías activas usan distintas unidades — se muestran en bloques separados porque no son comparables.</span>
           </div>
-          <div>
-            <div className="prt-spread" style={{ marginBottom: 8 }}>
-              <div>
-                <div className="prt-h3">Consumo por sucursal</div>
-                <div className="prt-hint">Suma · {tt.unit}</div>
-              </div>
-              <Chip>Heatmap</Chip>
-            </div>
-            <Heatmap months={heat.months} rows={heat.rows} color={tt.color} unit={tt.unit} />
+        )}
+        {chart.mixed ? (
+          <div style={{ padding: "20px 22px 22px", display: "flex", flexDirection: "column", gap: 28 }}>
+            {chart.blocks.map((block) => {
+              const heatBlock = heat.mixed ? heat.blocks.find(b => b.unit === block.unit) : null;
+              return (
+                <div key={block.unit} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 28 }}>
+                  <div>
+                    <div className="prt-spread" style={{ marginBottom: 8 }}>
+                      <div>
+                        <div className="prt-h3">Tendencia · {block.label}</div>
+                        <div className="prt-hint">{block.unit} / mes · {periodLabel(state.dashFilters.period)}</div>
+                      </div>
+                      <Chip>{block.unit}</Chip>
+                    </div>
+                    <MultiLineChart months={chart.months} series={block.series} unit={block.unit} />
+                  </div>
+                  <div>
+                    <div className="prt-spread" style={{ marginBottom: 8 }}>
+                      <div>
+                        <div className="prt-h3">Consumo por sucursal · {block.label}</div>
+                        <div className="prt-hint">Suma · {block.unit}</div>
+                      </div>
+                      <Chip>Heatmap</Chip>
+                    </div>
+                    {heatBlock
+                      ? <Heatmap months={heatBlock.months} rows={heatBlock.rows} color={tt.color} unit={block.unit} />
+                      : <div className="prt-hint">Sin datos para esta unidad.</div>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        ) : (
+          <div style={{ padding: "20px 22px 22px", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 28 }}>
+            <div>
+              <div className="prt-spread" style={{ marginBottom: 8 }}>
+                <div>
+                  <div className="prt-h3">Tendencia por subcategoría</div>
+                  <div className="prt-hint">{tt.unit} / mes · {periodLabel(state.dashFilters.period)}</div>
+                </div>
+                <Chip>{tt.unit}</Chip>
+              </div>
+              <MultiLineChart months={chart.months} series={chart.series} unit={chart.unit} />
+            </div>
+            <div>
+              <div className="prt-spread" style={{ marginBottom: 8 }}>
+                <div>
+                  <div className="prt-h3">Consumo por sucursal</div>
+                  <div className="prt-hint">Suma · {tt.unit}</div>
+                </div>
+                <Chip>Heatmap</Chip>
+              </div>
+              <Heatmap months={heat.months} rows={heat.rows} color={tt.color} unit={tt.unit} />
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Recent records table */}

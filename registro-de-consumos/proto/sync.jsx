@@ -359,24 +359,27 @@ async function rcHandleConfirm(ev) {
       }
     }
 
-    // 1b) Subir factura adjunta a una entrada manual (un archivo por record)
-    if (source === "manual" && detail.factura && detail.factura.file) {
+    // 1b) Subir facturas adjuntas a entradas manuales (una por record)
+    if (source === "manual" && Array.isArray(detail.facturas) && detail.facturas.length) {
       const folder = RC_CONFIG.FOLDERS.MANUAL_FACTURAS;
       if (folder) {
-        try {
-          console.log("[rc-sync] uploading factura:", detail.factura.name);
-          const base64 = await rcFileToBase64(detail.factura.file);
-          const up = await rcApiPost({
-            action: "upload",
-            name: detail.factura.file.name,
-            mimeType: detail.factura.file.type || "application/octet-stream",
-            base64: base64,
-            folderId: folder,
-          });
-          // attach the link to every manual record in this confirm batch
-          (records || []).forEach((r) => { r._driveLink = up.link; });
-          console.log("[rc-sync] factura uploaded:", up);
-        } catch (e) { console.warn("[rc-sync] factura upload failed", e); }
+        for (const f of detail.facturas) {
+          if (!f.file) continue;
+          try {
+            console.log("[rc-sync] uploading factura:", f.name);
+            const base64 = await rcFileToBase64(f.file);
+            const up = await rcApiPost({
+              action: "upload",
+              name: f.file.name,
+              mimeType: f.file.type || "application/octet-stream",
+              base64: base64,
+              folderId: folder,
+            });
+            const target = (records || []).find(r => r.id === f.recordId);
+            if (target) target._driveLink = up.link;
+            console.log("[rc-sync] factura uploaded:", up);
+          } catch (e) { console.warn("[rc-sync] factura upload failed", f.name, e); }
+        }
       } else {
         console.log("[rc-sync] MANUAL_FACTURAS folder not configured — skipping factura upload");
       }

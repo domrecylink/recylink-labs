@@ -1192,3 +1192,40 @@ textarea.prt-input { height: auto; padding: 12px 14px; line-height: 1.5; resize:
   color: var(--rl-gray-600);
   margin-top: 2px;
 }
+
+/* ============================================================
+   Dashboard — mixed-unit notice (combustible)
+   ============================================================ */
+.prt-mixed-units-notice {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 22px;
+  padding: 8px 12px;
+  background: var(--rl-gray-50);
+  border: 1px solid var(--rl-gray-200);
+  border-radius: 8px;
+  font: 500 12px/1.4 var(--rl-font-body);
+  color: var(--rl-gray-700);
+}
+.prt-mixed-units-notice svg { color: var(--rl-gray-500); flex-shrink: 0; }
+
+/* ============================================================
+   Manual flow — multi-entry "Agregar otro consumo" button
+   ============================================================ */
+.rc-manual-add-entry {
+  all: unset; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1.5px dashed var(--rl-gray-300);
+  border-radius: 12px;
+  color: var(--rl-gray-600);
+  font: 600 14px/1 var(--rl-font-display);
+  background: #FFFFFF;
+  transition: border-color .12s, color .12s, background .12s;
+}
+.rc-manual-add-entry:hover {
+  border-color: var(--rl-primary-300);
+  color: var(--rl-primary-900);
+  background: var(--rl-primary-50);
+  border-style: solid;
+}
