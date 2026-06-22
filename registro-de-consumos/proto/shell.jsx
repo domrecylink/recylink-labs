@@ -1,5 +1,55 @@
 // Shell — top-level layout: collapsible sidebar + main content + toast
 
+// =========================================================
+// Hash router — keeps URL in sync with state.view
+// =========================================================
+const VIEW_HASH = {
+  landing:      "/",
+  dashboard:    "/dashboard",
+  register:     "/registrar",
+  manual:       "/registrar/manual",
+  upload:       "/registrar/subir",
+  config:       "/configuracion",
+  "config-edit":"/configuracion/editar",
+  matrix:       "/matriz",
+  onboarding:   "/onboarding",
+};
+const HASH_VIEW = Object.fromEntries(Object.entries(VIEW_HASH).map(([v, h]) => [h, v]));
+
+function hashToView() {
+  const h = window.location.hash.replace(/^#/, "") || "/";
+  return HASH_VIEW[h] || "landing";
+}
+
+const RouterSync = () => {
+  const { state, dispatch } = useApp();
+
+  // state.view → hash
+  React.useEffect(() => {
+    const next = VIEW_HASH[state.view] || "/";
+    const cur  = window.location.hash.replace(/^#/, "") || "/";
+    if (cur !== next) window.location.hash = next;
+  }, [state.view]);
+
+  // hash → state.view (back/forward + direct URL)
+  React.useEffect(() => {
+    const initial = hashToView();
+    if (initial !== state.view) dispatch({ type: "NAVIGATE", view: initial });
+
+    const onHashChange = () => {
+      const v = hashToView();
+      if (v !== window.__rcCurrentView) dispatch({ type: "NAVIGATE", view: v });
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // track current view for hashchange guard
+  React.useEffect(() => { window.__rcCurrentView = state.view; }, [state.view]);
+
+  return null;
+};
+
 const SIDEBAR_LS_KEY = "rcSidebarCollapsed";
 
 const readSidebarCollapsed = () => {
@@ -159,4 +209,4 @@ const RegisterHubView = () => {
   );
 };
 
-Object.assign(window, { Shell, ViewSwitcher, Sidebar, RegisterHubView });
+Object.assign(window, { Shell, ViewSwitcher, Sidebar, RegisterHubView, RouterSync });
