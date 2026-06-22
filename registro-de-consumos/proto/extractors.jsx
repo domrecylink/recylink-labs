@@ -51,13 +51,17 @@ function rcExtraerEnel(textBundle) {
     costo: 0,
   };
 
-  // A. Número de Cliente — anclar a la etiqueta para no capturar el RUT de Enel
-  // (96800570-7) ni el del cliente. Acepta variantes del rótulo: "Número de
-  // cliente", "Numero cliente", "N° de cliente", "Nº cliente". Toma el primer
-  // XXXXXXX-X tras la etiqueta (admite saltos de línea). Fallback: genérico.
-  let mCli = texto.match(/N(?:[úu]mero|[°º])\s*(?:de\s+)?cliente[\s\S]{0,40}?(\d{4,8}-[\dkK])/i);
-  if (!mCli) mCli = texto.match(/(\d{4,8}-\d)/);
-  if (mCli) out.numeroCliente = mCli[1];
+  // A. Número de Cliente — la etiqueta "Número de cliente" NO está en la capa de
+  // texto del PDF (es vector), y pdf.js ordena por coordenada → la caja "RUT:
+  // 96800570-7" sale primero. Por eso no se puede anclar a etiqueta ni confiar
+  // en el orden. Estrategia: juntar todos los XXXXXX-X, descartar el RUT fijo de
+  // Enel (96800570-7) y preferir el formato de cliente (6-7 dígitos + DV); la
+  // Ruta (ej. 0762-0, 4 díg) y el RUT (8 díg) quedan fuera.
+  const RUT_ENEL = "968005707";
+  const candidatos = (texto.match(/\d{4,8}-[\dkK]/g) || [])
+    .filter(x => x.replace(/\D/g, "") !== RUT_ENEL);
+  const cliente = candidatos.find(x => /^\d{6,7}-[\dkK]$/.test(x)) || candidatos[0];
+  if (cliente) out.numeroCliente = cliente;
 
   // B. Fecha de Lectura
   let mFecha = texto.match(/Desde\s+(\d{2}\/\d{2}\/\d{4})/i);
