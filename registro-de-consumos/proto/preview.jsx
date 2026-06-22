@@ -66,6 +66,7 @@ const PreviewEditableView = () => {
                 <th style={{ width: 40 }}></th>
                 <th>Fecha</th>
                 <th>Sucursal</th>
+                <th>N° cliente</th>
                 <th>Tipo</th>
                 <th>Subcategoría</th>
                 <th className="num">Cantidad</th>
@@ -143,6 +144,13 @@ const PreviewRow = ({ row }) => {
               {activeSucNames(state).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           : row.sucursal}
+      </td>
+
+      {/* N° cliente (extraído del documento, solo lectura) */}
+      <td>
+        {row.numeroCliente
+          ? <span style={{ font: "500 13px/1 var(--rl-font-body)", color: "var(--rl-gray-700)" }}>{row.numeroCliente}</span>
+          : <span className="prt-hint">—</span>}
       </td>
 
       {/* Tipo */}
