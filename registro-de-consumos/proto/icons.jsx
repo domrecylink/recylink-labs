@@ -58,6 +58,14 @@ const ICON_PATHS = {
   cloud:         <g><path d="M17.5 19a4.5 4.5 0 1 0-1.5-8.75A6 6 0 1 0 6 14h11.5z"/></g>,
   expand_more:   <polyline points="6 9 12 15 18 9"/>,
   expand_less:   <polyline points="18 15 12 9 6 15"/>,
+
+  // Impacto ambiental
+  eco:           <g><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></g>,
+  target:        <g><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></g>,
+  percent:       <g><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></g>,
+  factory:       <g><path d="M2 20h20V8l-6 4V8l-6 4V4H6v16"/><line x1="6" y1="20" x2="6" y2="16"/><line x1="10" y1="20" x2="10" y2="16"/><line x1="14" y1="20" x2="14" y2="16"/><line x1="18" y1="20" x2="18" y2="16"/></g>,
+  undo:          <g><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></g>,
+  link:          <g><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g>,
 };
 
 const Icon = ({ name, size = 18, fill, color, style, strokeWidth = 2 }) => {

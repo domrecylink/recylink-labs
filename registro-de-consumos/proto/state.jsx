@@ -47,6 +47,57 @@ const FUEL_SUBCATS_CATALOG = {
   "gas-natural":    { label: "Gas Natural",     defaultUnit: "m³", units: ["m³", "kWh"] },
 };
 
+// ===== Emisiones GEI (Huella Chile) =====
+const SCOPES = {
+  1: { id: 1, label: "Alcance 1", desc: "Emisiones directas", color: "var(--rl-fuel)",        bg: "var(--rl-fuel-bg)" },
+  2: { id: 2, label: "Alcance 2", desc: "Energía indirecta",  color: "var(--rl-primary-900)", bg: "var(--rl-primary-50)" },
+  3: { id: 3, label: "Alcance 3", desc: "Otras indirectas",   color: "var(--rl-success-700)", bg: "var(--rl-success-50)" },
+};
+
+// Factores de emisión base de empresa (valores referenciales Huella Chile / IPCC).
+// La key de combustible coincide con r.subcat; electricidad/agua usan su propio type.
+const EMISSION_FACTOR_CATALOG = {
+  electricidad: { label: "Electricidad — SEN",  value: 0.4156, unit: "kgCO₂e/kWh", scope: 2, type: "electricidad", fuente: "Coordinador Eléctrico Nacional 2023" },
+  diesel:       { label: "Petróleo Diésel",     value: 2.696,  unit: "kgCO₂e/L",   scope: 1, type: "combustible",  fuente: "IPCC 2006 · Huella Chile" },
+  kerosene:     { label: "Kerosene",            value: 2.538,  unit: "kgCO₂e/L",   scope: 1, type: "combustible",  fuente: "IPCC 2006 · Huella Chile" },
+  gasolina:     { label: "Gasolina",            value: 2.271,  unit: "kgCO₂e/L",   scope: 1, type: "combustible",  fuente: "IPCC 2006 · Huella Chile" },
+  "fuel-oil":   { label: "Fuel Oil",            value: 3.066,  unit: "kgCO₂e/L",   scope: 1, type: "combustible",  fuente: "IPCC 2006 · Huella Chile" },
+  glp:          { label: "GLP",                 value: 2.954,  unit: "kgCO₂e/kg",  scope: 1, type: "combustible",  fuente: "IPCC 2006 · Huella Chile" },
+  lena:         { label: "Leña",                value: 0.024,  unit: "kgCO₂e/kg",  scope: 1, type: "combustible",  fuente: "IPCC 2006 (no biogénico)" },
+  pellets:      { label: "Pellets",             value: 0.045,  unit: "kgCO₂e/kg",  scope: 1, type: "combustible",  fuente: "IPCC 2006 (no biogénico)" },
+  "gas-natural":{ label: "Gas Natural",         value: 2.022,  unit: "kgCO₂e/m³",  scope: 1, type: "combustible",  fuente: "IPCC 2006 · Huella Chile" },
+  agua:         { label: "Agua potable",        value: 0.348,  unit: "kgCO₂e/m³",  scope: 3, type: "agua",         fuente: "Huella Chile · cadena de suministro" },
+};
+
+// Catálogo de refrigerantes con su GWP (potencial de calentamiento global, AR5 100 años)
+const REFRIGERANTES_CATALOG = [
+  { id: "r22",   label: "R-22",   gwp: 1810 },
+  { id: "r410a", label: "R-410A", gwp: 2088 },
+  { id: "r134a", label: "R-134a", gwp: 1430 },
+  { id: "r404a", label: "R-404A", gwp: 3922 },
+  { id: "r507",  label: "R-507",  gwp: 3985 },
+  { id: "r32",   label: "R-32",   gwp: 675  },
+];
+
+let __rfIdC = 0;
+const nextRefrigId = () => "rf" + (++__rfIdC);
+
+// Semilla de emisiones — app data-driven: solo factores base de empresa + meta por
+// defecto. Overrides y refrigerantes por sucursal se crean en runtime (keyed por suc id).
+function seedEmissions() {
+  const factoresEmpresa = {};
+  Object.entries(EMISSION_FACTOR_CATALOG).forEach(([k, v]) => { factoresEmpresa[k] = { ...v }; });
+  return {
+    factoresEmpresa,
+    factoresSucursal: {},      // { [sucId]: { [key]: { value, pendingReview } } }
+    refrigerantesSucursal: {}, // { [sucId]: [ { uid, tipo, cargaKg, mes } ] }
+    metas: {
+      empresa: { absoluta: "", relativa: 30, anioBase: 2023 },
+      sucursales: {},          // { [sucId]: { absoluta, relativa, anioBase } }
+    },
+  };
+}
+
 // ----- Sucursales config seed -----
 let __sucIdC = 0;
 const nextSucId = () => "suc" + (++__sucIdC);
@@ -83,7 +134,7 @@ const nextEntryId = () => "ent" + (++__entryIdC);
 // ----- Initial state -----
 const initialState = {
   // routing
-  view: "landing",            // landing | manual | upload | preview | dashboard | subcat | onboarding | config | config-edit | matrix | register
+  view: "landing",            // landing | manual | upload | preview | dashboard | subcat | onboarding | config | config-edit | matrix | register | impacto | factores | metas
   manualStep: "form",         // form | preview | success
   uploadStep: 1,              // 1 | 2 | 3 | 4 (preview)
   // domain — empty by default; populated from Google Sheets on login + refresh
@@ -94,6 +145,10 @@ const initialState = {
   // config (sucursales setup, populated by onboarding or seeded)
   configSucursales: seedConfigSucursales(),
   configEditId: null,         // id of sucursal being edited
+  // emisiones GEI (Impacto Ambiental)
+  emissions: seedEmissions(),
+  emisScope: "all",           // dashboard impacto: all | 1 | 2 | 3
+  emisSucursal: "all",        // factores/metas: which sucursal view ("all" = empresa)
   // matrix view (upload status grid)
   matrixMonth: CURRENT_MONTH_KEY,
   // form drafts (manual)
@@ -438,6 +493,71 @@ function reducer(state, action) {
       return { ...state, configSucursales: newSucs };
     }
 
+    // ----- Emisiones GEI
+    case "EMIS/SET_VIEW_SUC":
+      return { ...state, emisSucursal: action.sucId };
+    case "EMIS/SET_SCOPE":
+      return { ...state, emisScope: action.scope };
+    case "EMIS/SET_COMPANY_FACTOR": {
+      const emp = { ...state.emissions.factoresEmpresa };
+      emp[action.key] = { ...emp[action.key], value: action.value };
+      return { ...state, emissions: { ...state.emissions, factoresEmpresa: emp } };
+    }
+    case "EMIS/OVERRIDE_SUC_FACTOR": {
+      const fs = { ...state.emissions.factoresSucursal };
+      const cur = { ...(fs[action.sucId] || {}) };
+      cur[action.key] = { value: action.value, pendingReview: false };
+      fs[action.sucId] = cur;
+      return { ...state, emissions: { ...state.emissions, factoresSucursal: fs } };
+    }
+    case "EMIS/RESET_SUC_FACTOR": {
+      const fs = { ...state.emissions.factoresSucursal };
+      if (fs[action.sucId]) {
+        const cur = { ...fs[action.sucId] };
+        delete cur[action.key];
+        fs[action.sucId] = cur;
+      }
+      return { ...state, emissions: { ...state.emissions, factoresSucursal: fs } };
+    }
+    case "EMIS/ACK_PENDING": {
+      const fs = { ...state.emissions.factoresSucursal };
+      if (fs[action.sucId] && fs[action.sucId][action.key]) {
+        const cur = { ...fs[action.sucId] };
+        cur[action.key] = { ...cur[action.key], pendingReview: false };
+        fs[action.sucId] = cur;
+      }
+      return { ...state, emissions: { ...state.emissions, factoresSucursal: fs } };
+    }
+    case "EMIS/ADD_REFRIG": {
+      const rs = { ...state.emissions.refrigerantesSucursal };
+      const list = [...(rs[action.sucId] || [])];
+      list.push({ uid: nextRefrigId(), tipo: action.tipo, cargaKg: action.cargaKg, mes: CURRENT_MONTH_KEY });
+      rs[action.sucId] = list;
+      return { ...state, emissions: { ...state.emissions, refrigerantesSucursal: rs } };
+    }
+    case "EMIS/UPDATE_REFRIG": {
+      const rs = { ...state.emissions.refrigerantesSucursal };
+      rs[action.sucId] = (rs[action.sucId] || []).map(r => r.uid === action.uid ? { ...r, ...action.patch } : r);
+      return { ...state, emissions: { ...state.emissions, refrigerantesSucursal: rs } };
+    }
+    case "EMIS/REMOVE_REFRIG": {
+      const rs = { ...state.emissions.refrigerantesSucursal };
+      rs[action.sucId] = (rs[action.sucId] || []).filter(r => r.uid !== action.uid);
+      return { ...state, emissions: { ...state.emissions, refrigerantesSucursal: rs } };
+    }
+    case "EMIS/SET_META_EMPRESA":
+      return { ...state, emissions: { ...state.emissions, metas: { ...state.emissions.metas, empresa: { ...state.emissions.metas.empresa, ...action.patch } } } };
+    case "EMIS/SET_META_SUC": {
+      const sucs = { ...state.emissions.metas.sucursales };
+      sucs[action.sucId] = { ...(sucs[action.sucId] || { absoluta: "", relativa: "", anioBase: state.emissions.metas.empresa.anioBase }), ...action.patch };
+      return { ...state, emissions: { ...state.emissions, metas: { ...state.emissions.metas, sucursales: sucs } } };
+    }
+    case "EMIS/CLEAR_META_SUC": {
+      const sucs = { ...state.emissions.metas.sucursales };
+      delete sucs[action.sucId];
+      return { ...state, emissions: { ...state.emissions, metas: { ...state.emissions.metas, sucursales: sucs } } };
+    }
+
     // ----- Matrix view
     case "MATRIX/SET_MONTH":
       return { ...state, matrixMonth: action.month };
@@ -484,6 +604,10 @@ function fmtNum(n) {
   if (n == null || isNaN(n)) return "—";
   return Math.round(n).toLocaleString("es-CL");
 }
+function fmtTon(n, dec = 1) {
+  if (n == null || isNaN(n)) return "—";
+  return Number(n).toLocaleString("es-CL", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
 function fmtDate(iso) {
   if (!iso) return "—";
   const [y,m,d] = iso.split("-");
@@ -494,8 +618,32 @@ function monthLabelShort(mk) {
   const names = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   return names[parseInt(m, 10) - 1] + " " + y.slice(2);
 }
+// Enumerate month keys (YYYY-MM) between start and end inclusive, chronological.
+// Tolerant of reversed args (swaps) and caps span to avoid runaway ranges.
+function monthKeysInRange(start, end) {
+  if (!start || !end) return [];
+  if (start > end) { const t = start; start = end; end = t; }
+  const [ys, ms] = start.split("-").map(n => parseInt(n, 10));
+  const [ye, me] = end.split("-").map(n => parseInt(n, 10));
+  const out = [];
+  let y = ys, m = ms, guard = 0;
+  while ((y < ye || (y === ye && m <= me)) && guard++ < 240) {
+    out.push(monthKey(y, m));
+    m += 1; if (m > 12) { m = 1; y += 1; }
+  }
+  return out;
+}
+// Parse a custom period string "custom:YYYY-MM:YYYY-MM" → { start, end } or null.
+function parseCustomPeriod(period) {
+  if (typeof period !== "string" || !period.startsWith("custom:")) return null;
+  const [, start, end] = period.split(":");
+  if (!start || !end) return null;
+  return { start, end };
+}
 function periodToMonthKeys(period) {
   // return array of month keys (in chronological order) for the period
+  const custom = parseCustomPeriod(period);
+  if (custom) return monthKeysInRange(custom.start, custom.end);
   if (period === "12m") return months.slice();
   if (period === "6m")  return months.slice(-6);
   if (period === "3m")  return months.slice(-3);
@@ -506,6 +654,8 @@ function periodLabel(period) {
   const [yc, mc] = CURRENT_MONTH_KEY.split("-");
   const names = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   const curLabel = names[parseInt(mc, 10) - 1] + " " + yc;
+  const custom = parseCustomPeriod(period);
+  if (custom) return monthLabelShort(custom.start) + " — " + monthLabelShort(custom.end);
   return {
     "12m": "Últimos 12 meses",
     "6m":  "Últimos 6 meses",
@@ -655,10 +805,11 @@ function subcatLabel(type, id) {
 Object.assign(window, {
   StateProvider, StateContext, useApp,
   COMPANY, SUCURSALES, TYPES, INITIAL_SUBCATS, PROVIDERS, FUEL_SUBCATS_CATALOG,
+  SCOPES, EMISSION_FACTOR_CATALOG, REFRIGERANTES_CATALOG,
   months, nextId,
   CURRENT_MONTH_KEY, PREV_MONTH_KEY,
-  fmtCLP, fmtNum, fmtDate, monthLabelShort,
-  periodToMonthKeys, periodLabel, subcatLabel, activeSucNames, getSubcatsFor,
+  fmtCLP, fmtNum, fmtTon, fmtDate, monthLabelShort,
+  periodToMonthKeys, periodLabel, monthKeysInRange, parseCustomPeriod, subcatLabel, activeSucNames, getSubcatsFor,
   getConfiguredProvider, getProviderOptionsFor,
   normNumCliente, resolveByNumCliente,
 });

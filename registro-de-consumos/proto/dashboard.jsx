@@ -514,18 +514,52 @@ const DashFilterBar = () => {
   const { state, dispatch } = useApp();
   const f = state.dashFilters;
   const set = (key, value) => dispatch({ type: "DASH/SET_FILTER", key, value });
+  const custom = parseCustomPeriod(f.period);
+  const isCustom = !!custom;
+  const selValue = isCustom ? "custom" : f.period;
+  // default custom range = the full 12-month window
+  const defStart = months[0];
+  const defEnd = CURRENT_MONTH_KEY;
+  const onPeriodChange = (v) => {
+    if (v === "custom") set("period", `custom:${defStart}:${defEnd}`);
+    else set("period", v);
+  };
+  const setRange = (start, end) => set("period", `custom:${start}:${end}`);
   return (
     <div className="prt-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
       <select className="prt-select" style={{ width: 220 }} value={f.sucursal} onChange={e => set("sucursal", e.target.value)}>
         <option value="all">Todas las sucursales ({activeSucNames(state).length})</option>
         {activeSucNames(state).map(s => <option key={s} value={s}>{s}</option>)}
       </select>
-      <select className="prt-select" style={{ width: 200 }} value={f.period} onChange={e => set("period", e.target.value)}>
+      <select className="prt-select" style={{ width: 200 }} value={selValue} onChange={e => onPeriodChange(e.target.value)}>
         <option value="12m">Últimos 12 meses</option>
         <option value="6m">Últimos 6 meses</option>
         <option value="3m">Últimos 3 meses</option>
         <option value="1m">{periodLabel("1m")}</option>
+        <option value="custom">Personalizado…</option>
       </select>
+      {isCustom && (
+        <div className="prt-row" style={{ gap: 6, alignItems: "center" }}>
+          <input
+            type="month"
+            className="prt-input"
+            style={{ width: 150 }}
+            value={custom.start}
+            max={custom.end}
+            onChange={e => e.target.value && setRange(e.target.value, custom.end)}
+          />
+          <span className="prt-hint" style={{ opacity: 0.7 }}>—</span>
+          <input
+            type="month"
+            className="prt-input"
+            style={{ width: 150 }}
+            value={custom.end}
+            min={custom.start}
+            max={CURRENT_MONTH_KEY}
+            onChange={e => e.target.value && setRange(custom.start, e.target.value)}
+          />
+        </div>
+      )}
       <Btn size="sm" kind="ghost" icon="filter_alt_off" onClick={() => {
         set("sucursal", "all"); set("period", "12m"); set("subcat", "all");
       }}>Limpiar filtros</Btn>

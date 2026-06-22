@@ -12,6 +12,9 @@ const VIEW_HASH = {
   config:       "/configuracion",
   "config-edit":"/configuracion/editar",
   matrix:       "/matriz",
+  impacto:      "/impacto",
+  factores:     "/impacto/factores",
+  metas:        "/impacto/metas",
   onboarding:   "/onboarding",
 };
 const HASH_VIEW = Object.fromEntries(Object.entries(VIEW_HASH).map(([v, h]) => [h, v]));
@@ -100,6 +103,9 @@ const ViewSwitcher = () => {
     case "config":      return <ConfigView />;
     case "config-edit": return <ConfigEditView />;
     case "matrix":      return <UploadMatrixView />;
+    case "impacto":     return <ImpactoView />;
+    case "factores":    return <FactoresView />;
+    case "metas":       return <MetasView />;
     case "register":    return <RegisterHubView />;
     case "landing":
     default:            return <Landing />;
@@ -109,6 +115,7 @@ const ViewSwitcher = () => {
 const SIDEBAR_ITEMS = [
   { view: "landing",    label: "Inicio",        icon: "home",         extra: {} },
   { view: "dashboard",  label: "Dashboard",     icon: "dashboard",    extra: {} },
+  { view: "impacto",    label: "Impacto",       icon: "eco",          extra: {} },
   { view: "register",   label: "Registrar",     icon: "edit",         extra: {} },
   { view: "config",     label: "Configuración", icon: "settings",     extra: {} },
 ];
@@ -141,6 +148,7 @@ const Sidebar = ({ collapsed, onToggle }) => {
           const isActive = state.view === it.view
             || (it.view === "config" && state.view === "config-edit")
             || (it.view === "dashboard" && state.view === "matrix")
+            || (it.view === "impacto" && (state.view === "factores" || state.view === "metas"))
             || (it.view === "register" && (state.view === "manual" || state.view === "upload"));
           return (
             <button
