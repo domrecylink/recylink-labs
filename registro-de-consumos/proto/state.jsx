@@ -149,6 +149,7 @@ const initialState = {
   emissions: seedEmissions(),
   emisScope: "all",           // dashboard impacto: all | 1 | 2 | 3
   emisSucursal: "all",        // factores/metas: which sucursal view ("all" = empresa)
+  emisFilters: { sucursal: "all", period: "12m" }, // dashboard impacto: sucursal + período
   // matrix view (upload status grid)
   matrixMonth: CURRENT_MONTH_KEY,
   // form drafts (manual)
@@ -199,6 +200,11 @@ function reducer(state, action) {
     // ----- Manual draft
     case "MANUAL/SET_SHARED_FIELD": {
       const draft = { ...state.manualDraft, [action.field]: action.value };
+      // Al cambiar de sucursal, las subcategorías configuradas (agua/combustible) y sus
+      // unidades cambian — limpia subcat de cada consumo para evitar valores inválidos.
+      if (action.field === "sucursal") {
+        draft.entries = (draft.entries || []).map(e => ({ ...e, subcat: "" }));
+      }
       const errors = { ...state.manualErrors };
       delete errors[action.field];
       return { ...state, manualDraft: draft, manualErrors: errors };
@@ -263,7 +269,7 @@ function reducer(state, action) {
         subcat: e.subcat || null,
         provider: e.provider || "—",
         cantidad: parseFloat(e.cantidad),
-        unit: TYPES[e.type].unit,
+        unit: getEntryUnit(state, d.sucursal, e.type, e.subcat),
         costo: parseFloat(e.costo) || 0,
         origen: "manual",
         estado: "activa",
@@ -498,6 +504,10 @@ function reducer(state, action) {
       return { ...state, emisSucursal: action.sucId };
     case "EMIS/SET_SCOPE":
       return { ...state, emisScope: action.scope };
+    case "EMIS/SET_FILTER":
+      return { ...state, emisFilters: { ...state.emisFilters, [action.key]: action.value } };
+    case "EMIS/LOAD":
+      return { ...state, emissions: mergeEmissions(action.emissions) };
     case "EMIS/SET_COMPANY_FACTOR": {
       const emp = { ...state.emissions.factoresEmpresa };
       emp[action.key] = { ...emp[action.key], value: action.value };
@@ -576,8 +586,67 @@ function reducer(state, action) {
 // ----- Context provider -----
 const StateContext = React.createContext(null);
 
+// Emisiones — persistencia en localStorage (fallback) + Sheets (canónico).
+const EMISSIONS_LS_KEY = "rcEmissionsV1";
+
+// Mergea un objeto emisiones parcial sobre la semilla — preserva metadata del
+// catálogo (label/unit/scope/fuente) y solo aplica los valores guardados.
+function mergeEmissions(src) {
+  const base = seedEmissions();
+  if (!src || typeof src !== "object") return base;
+  if (src.factoresEmpresa) {
+    Object.keys(base.factoresEmpresa).forEach(k => {
+      const s = src.factoresEmpresa[k];
+      if (s && typeof s.value === "number") base.factoresEmpresa[k].value = s.value;
+    });
+  }
+  if (src.factoresSucursal && typeof src.factoresSucursal === "object") {
+    base.factoresSucursal = src.factoresSucursal;
+  }
+  if (src.refrigerantesSucursal && typeof src.refrigerantesSucursal === "object") {
+    base.refrigerantesSucursal = src.refrigerantesSucursal;
+    let maxN = 0;
+    Object.values(src.refrigerantesSucursal).forEach(arr => {
+      (arr || []).forEach(r => {
+        const m = /^rf(\d+)$/.exec((r && r.uid) || "");
+        if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+      });
+    });
+    if (maxN > __rfIdC) __rfIdC = maxN;
+  }
+  if (src.metas && typeof src.metas === "object") {
+    base.metas = {
+      empresa:    { ...base.metas.empresa,    ...(src.metas.empresa    || {}) },
+      sucursales: { ...base.metas.sucursales, ...(src.metas.sucursales || {}) },
+    };
+  }
+  return base;
+}
+
+function loadEmissions() {
+  try {
+    const raw = window.localStorage.getItem(EMISSIONS_LS_KEY);
+    if (!raw) return seedEmissions();
+    return mergeEmissions(JSON.parse(raw));
+  } catch (e) {
+    return seedEmissions();
+  }
+}
+
+function saveEmissions(emissions) {
+  try { window.localStorage.setItem(EMISSIONS_LS_KEY, JSON.stringify(emissions)); } catch (e) {}
+}
+
 const StateProvider = ({ children }) => {
-  const [state, dispatch] = React.useReducer(reducer, initialState);
+  const [state, dispatch] = React.useReducer(
+    reducer,
+    initialState,
+    (s) => ({ ...s, emissions: loadEmissions() })
+  );
+  // Persistir emisiones al cambiar
+  React.useEffect(() => {
+    saveEmissions(state.emissions);
+  }, [state.emissions]);
   // auto-hide toast after 4.5s
   React.useEffect(() => {
     if (!state.toast) return;
@@ -681,22 +750,49 @@ function aguaSubcatFromConfig(sc) {
   return { id: sc.tipo, label: labels[sc.tipo] || sc.tipo, source: "config" };
 }
 
+// Map a combustible subcat (from configSucursales) to a record-level option.
+// Predefined tipos use their value as id (e.g. "diesel"); custom → "otro:<slug>".
+// Lleva la unidad de medida configurada en la sucursal.
+function combustibleSubcatFromConfig(sc) {
+  if (!sc?.tipo) return null;
+  if (sc.tipo === "__otro") {
+    const name = (sc.tipoCustom || "").trim();
+    if (!name) return null;
+    return { id: "otro:" + name.toLowerCase().replace(/\s+/g, "-"), label: name, unidad: sc.unidad || "", source: "config" };
+  }
+  const cat = FUEL_SUBCATS_CATALOG[sc.tipo];
+  return { id: sc.tipo, label: cat ? cat.label : sc.tipo, unidad: sc.unidad || (cat ? cat.defaultUnit : ""), source: "config" };
+}
+
 // Subcategoría options for a given consumption type.
-// For "agua", derive from configured tipos in configSucursales (deduped). Falls back
-// to INITIAL_SUBCATS for other types.
-function getSubcatsFor(state, type) {
-  if (type === "agua") {
+// Para "agua" y "combustible" derivan de los tipos configurados en configSucursales.
+// Si se pasa `sucursalName`, acota a esa sucursal (registro individual); si no,
+// agrega los de todas las sucursales activas (dashboard). Otros tipos → INITIAL_SUBCATS.
+function getSubcatsFor(state, type, sucursalName) {
+  if (type === "agua" || type === "combustible") {
+    const fromCfg = type === "agua" ? aguaSubcatFromConfig : combustibleSubcatFromConfig;
     const seen = new Map();
     (state?.configSucursales || []).forEach(s => {
-      if (!s.activa || !s.items?.agua?.activo) return;
-      s.items.agua.subcats.forEach(sc => {
-        const opt = aguaSubcatFromConfig(sc);
+      if (!s.activa || !s.items?.[type]?.activo) return;
+      if (sucursalName && s.nombre !== sucursalName) return;
+      s.items[type].subcats.forEach(sc => {
+        const opt = fromCfg(sc);
         if (opt && !seen.has(opt.id)) seen.set(opt.id, opt);
       });
     });
     return [...seen.values()];
   }
   return state?.subcategories?.[type] || INITIAL_SUBCATS[type] || [];
+}
+
+// Unidad de medida para un consumo. Combustible usa la unidad configurada en la
+// subcategoría de la sucursal; el resto usa la unidad estándar del tipo.
+function getEntryUnit(state, sucursalName, type, subcatId) {
+  if (type === "combustible" && subcatId) {
+    const opt = getSubcatsFor(state, "combustible", sucursalName).find(o => o.id === subcatId);
+    if (opt && opt.unidad) return opt.unidad;
+  }
+  return TYPES[type] ? TYPES[type].unit : "";
 }
 
 // Resolve a configured provider name from a sucursal subcat. Returns the proveedorCustom
@@ -797,6 +893,13 @@ function subcatLabel(type, id) {
   if (type === "agua") {
     return ({ potable: "Potable", gris: "Gris", industrial: "Industrial" })[id] || id;
   }
+  // Combustible: custom "otro:slug" o tipo del catálogo de combustibles
+  if (type === "combustible") {
+    if (id.startsWith("otro:")) {
+      return id.slice(5).split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+    }
+    return FUEL_SUBCATS_CATALOG[id] ? FUEL_SUBCATS_CATALOG[id].label : id;
+  }
   const list = INITIAL_SUBCATS[type] || [];
   const found = list.find(s => s.id === id);
   return found ? found.label : id;
@@ -810,6 +913,7 @@ Object.assign(window, {
   CURRENT_MONTH_KEY, PREV_MONTH_KEY,
   fmtCLP, fmtNum, fmtTon, fmtDate, monthLabelShort,
   periodToMonthKeys, periodLabel, monthKeysInRange, parseCustomPeriod, subcatLabel, activeSucNames, getSubcatsFor,
+  combustibleSubcatFromConfig, getEntryUnit,
   getConfiguredProvider, getProviderOptionsFor,
   normNumCliente, resolveByNumCliente,
 });

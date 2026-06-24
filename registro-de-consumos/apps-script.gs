@@ -66,6 +66,7 @@ function doGet(e) {
     if (action === "read") return jsonOut(readAll());
     if (action === "getConfig") return jsonOut(getConfigValue(e.parameter.key));
     if (action === "getConfigSucursales") return jsonOut(getConfigSucursales());
+    if (action === "getEmissions") return jsonOut(getEmissions());
     if (action === "ping") return jsonOut({ ok: true, pong: new Date().toISOString() });
     return jsonOut({ error: "unknown action: " + action });
   } catch (err) {
@@ -83,6 +84,10 @@ function doPost(e) {
     }
     if (action === "setConfigSucursales") {
       setConfigSucursales(body.rows || []);
+      return jsonOut({ ok: true });
+    }
+    if (action === "setEmissions") {
+      setEmissions(body.rows || []);
       return jsonOut({ ok: true });
     }
     if (action === "append") {
@@ -238,5 +243,32 @@ function setConfigSucursales(rows) {
   sheet.getRange(1, 1, 1, CONFIG_SUC_HEADERS.length).setValues([CONFIG_SUC_HEADERS]);
   if (rows && rows.length) {
     sheet.getRange(2, 1, rows.length, CONFIG_SUC_HEADERS.length).setValues(rows);
+  }
+}
+
+// ----- Factores de emisión (hoja "Emisiones") ----------------------------
+// Una fila por entrada. Scopes: factor-empresa | factor-sucursal | refrigerante | meta-empresa | meta-sucursal.
+
+var EMISSIONS_SHEET = "Emisiones";
+var EMISSIONS_HEADERS = [
+  "Scope", "Sucursal ID", "Key", "Value", "Pending Review", "Refrig Tipo", "Refrig Mes",
+];
+
+function getEmissions() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMISSIONS_SHEET);
+  if (!sheet) return { rows: [] };
+  var data = sheet.getDataRange().getValues();
+  return { rows: data.slice(1) };
+}
+
+function setEmissions(rows) {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName(EMISSIONS_SHEET);
+  if (!sheet) sheet = ss.insertSheet(EMISSIONS_SHEET);
+  sheet.clear();
+  sheet.getRange(1, 1, 1, EMISSIONS_HEADERS.length).setValues([EMISSIONS_HEADERS]);
+  if (rows && rows.length) {
+    sheet.getRange(2, 1, rows.length, EMISSIONS_HEADERS.length).setValues(rows);
   }
 }

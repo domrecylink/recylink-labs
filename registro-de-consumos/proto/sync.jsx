@@ -221,6 +221,120 @@ async function rcWriteConfigSucursales(sucursales) {
   await rcApiPost({ action: "setConfigSucursales", rows: rcFlattenConfig(sucursales) });
 }
 
+// ----- Emisiones (hoja "Emisiones") -------------------------------------
+// Scopes en columna 1:
+//   factor-empresa  | ""    | key | value | "" | "" | ""
+//   factor-sucursal | sucId | key | value | "Sí"/"No" pendingReview | "" | ""
+//   refrigerante    | sucId | uid | cargaKg | "" | tipo | mes
+//   meta-empresa    | ""    | absoluta|relativa|anioBase | value | "" | "" | ""
+//   meta-sucursal   | sucId | absoluta|relativa|anioBase | value | "" | "" | ""
+
+function rcFlattenEmissions(emissions) {
+  const rows = [];
+  const e = emissions || {};
+  Object.entries(e.factoresEmpresa || {}).forEach(([k, v]) => {
+    rows.push(["factor-empresa", "", k, v && v.value != null ? v.value : "", "", "", ""]);
+  });
+  Object.entries(e.factoresSucursal || {}).forEach(([sucId, byKey]) => {
+    Object.entries(byKey || {}).forEach(([k, v]) => {
+      rows.push([
+        "factor-sucursal", sucId, k,
+        v && v.value != null ? v.value : "",
+        v && v.pendingReview ? "Sí" : "No",
+        "", "",
+      ]);
+    });
+  });
+  Object.entries(e.refrigerantesSucursal || {}).forEach(([sucId, arr]) => {
+    (arr || []).forEach(rf => {
+      rows.push([
+        "refrigerante", sucId,
+        rf.uid || "",
+        rf.cargaKg != null ? rf.cargaKg : "",
+        "",
+        rf.tipo || "",
+        rf.mes || "",
+      ]);
+    });
+  });
+  const me = (e.metas && e.metas.empresa) || {};
+  ["absoluta", "relativa", "anioBase"].forEach(k => {
+    if (me[k] != null && me[k] !== "") rows.push(["meta-empresa", "", k, me[k], "", "", ""]);
+  });
+  Object.entries((e.metas && e.metas.sucursales) || {}).forEach(([sucId, m]) => {
+    ["absoluta", "relativa", "anioBase"].forEach(k => {
+      if (m && m[k] != null && m[k] !== "") rows.push(["meta-sucursal", sucId, k, m[k], "", "", ""]);
+    });
+  });
+  return rows;
+}
+
+function rcUnflattenEmissions(rows) {
+  const out = {
+    factoresEmpresa: {},
+    factoresSucursal: {},
+    refrigerantesSucursal: {},
+    metas: { empresa: {}, sucursales: {} },
+  };
+  (rows || []).forEach(r => {
+    const scope = String(r[0] || "").trim();
+    const sucId = String(r[1] || "").trim();
+    const key   = String(r[2] || "").trim();
+    const rawVal = r[3];
+    if (scope === "factor-empresa" && key) {
+      const n = parseFloat(rawVal);
+      if (!isNaN(n)) out.factoresEmpresa[key] = { value: n };
+    } else if (scope === "factor-sucursal" && key && sucId) {
+      const n = parseFloat(rawVal);
+      if (!isNaN(n)) {
+        if (!out.factoresSucursal[sucId]) out.factoresSucursal[sucId] = {};
+        const p = String(r[4] || "").trim().toLowerCase();
+        out.factoresSucursal[sucId][key] = { value: n, pendingReview: p === "sí" || p === "si" };
+      }
+    } else if (scope === "refrigerante" && sucId) {
+      if (!out.refrigerantesSucursal[sucId]) out.refrigerantesSucursal[sucId] = [];
+      const carga = parseFloat(rawVal);
+      out.refrigerantesSucursal[sucId].push({
+        uid: key || "",
+        tipo: String(r[5] || "").trim(),
+        cargaKg: isNaN(carga) ? 0 : carga,
+        mes: String(r[6] || "").trim(),
+      });
+    } else if (scope === "meta-empresa" && key) {
+      const n = parseFloat(rawVal);
+      out.metas.empresa[key] = isNaN(n) ? rawVal : n;
+    } else if (scope === "meta-sucursal" && key && sucId) {
+      if (!out.metas.sucursales[sucId]) out.metas.sucursales[sucId] = {};
+      const n = parseFloat(rawVal);
+      out.metas.sucursales[sucId][key] = isNaN(n) ? rawVal : n;
+    }
+  });
+  return out;
+}
+
+function rcEmissionsHasContent(em) {
+  if (!em) return false;
+  if (Object.keys(em.factoresEmpresa || {}).length > 0) return true;
+  if (Object.keys(em.factoresSucursal || {}).length > 0) return true;
+  if (Object.keys(em.refrigerantesSucursal || {}).length > 0) return true;
+  if (em.metas && Object.keys(em.metas.empresa || {}).length > 0) return true;
+  if (em.metas && Object.keys(em.metas.sucursales || {}).length > 0) return true;
+  return false;
+}
+
+async function rcReadEmissions() {
+  if (!rcEndpointConfigured()) return null;
+  const data = await rcApiGet({ action: "getEmissions" });
+  const rows = (data && data.rows) || [];
+  if (!rows.length) return null;
+  return rcUnflattenEmissions(rows);
+}
+
+async function rcWriteEmissions(emissions) {
+  if (!rcEndpointConfigured()) return;
+  await rcApiPost({ action: "setEmissions", rows: rcFlattenEmissions(emissions) });
+}
+
 // ----- Read all records ---------------------------------------------------
 
 async function rcReadAllRecords() {
@@ -597,6 +711,21 @@ const SyncBootstrap = () => {
         console.warn("[rc-sync] config load failed", e);
       }
       window.__rcConfigBootstrapped = true;
+
+      // 3) Factores de emisión
+      try {
+        const em = await rcReadEmissions();
+        if (em && rcEmissionsHasContent(em)) {
+          const { dispatch } = window.__rcStoreRef || {};
+          if (dispatch) {
+            window.__rcLoadedEmissionsJson = JSON.stringify(em);
+            dispatch({ type: "EMIS/LOAD", emissions: em });
+          }
+        }
+      } catch (e) {
+        console.warn("[rc-sync] emissions load failed", e);
+      }
+      window.__rcEmissionsBootstrapped = true;
     }
     init();
   }, []);
@@ -636,6 +765,7 @@ const SyncToaster = () => {
 const StoreBridge = () => {
   const app = useApp();
   const debounceRef = React.useRef(null);
+  const emisDebounceRef = React.useRef(null);
 
   React.useEffect(() => {
     window.__rcStoreRef = app;
@@ -663,6 +793,27 @@ const StoreBridge = () => {
     }, 800);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [app.state.configSucursales]);
+
+  // Guarda emisiones en Sheets cuando cambian (debounce 800ms).
+  React.useEffect(() => {
+    if (!window.__rcEmissionsBootstrapped) return;
+    const json = JSON.stringify(app.state.emissions);
+    if (emisDebounceRef.current) clearTimeout(emisDebounceRef.current);
+    emisDebounceRef.current = setTimeout(async () => {
+      if (!rcEndpointConfigured()) return;
+      if (window.__rcLoadedEmissionsJson === json) {
+        window.__rcLoadedEmissionsJson = undefined;
+        return;
+      }
+      try {
+        await rcWriteEmissions(app.state.emissions);
+        console.log("[rc-sync] emisiones guardadas");
+      } catch (e) {
+        console.error("[rc-sync] emissions save failed", e);
+      }
+    }, 800);
+    return () => { if (emisDebounceRef.current) clearTimeout(emisDebounceRef.current); };
+  }, [app.state.emissions]);
 
   return null;
 };
@@ -717,6 +868,6 @@ const SheetLink = () => null;
 
 Object.assign(window, {
   StoreBridge, SyncBootstrap, SyncToaster, SyncStatus, SheetLink, RC_CONFIG,
-  rcReadConfig, rcWriteConfig,
   rcReadConfigSucursales, rcWriteConfigSucursales, rcFlattenConfig, rcUnflattenConfig,
+  rcReadEmissions, rcWriteEmissions, rcFlattenEmissions, rcUnflattenEmissions,
 });
