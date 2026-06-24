@@ -8,7 +8,7 @@ function validateManual(d, state) {
   (d.entries || []).forEach((e) => {
     const ee = {};
     if (!e.type) ee.type = "Indica el tipo.";
-    if (e.type && getSubcatsFor(state, e.type).length > 0 && !e.subcat) ee.subcat = "Requiere subcategoría.";
+    if (e.type && getSubcatsFor(state, e.type, d.sucursal).length > 0 && !e.subcat) ee.subcat = "Requiere subcategoría.";
     if (!e.cantidad) ee.cantidad = "Ingresa la cantidad.";
     else if (isNaN(parseFloat(e.cantidad)) || parseFloat(e.cantidad) <= 0) ee.cantidad = "Debe ser > 0.";
     if (e.costo && (isNaN(parseFloat(e.costo)) || parseFloat(e.costo) < 0)) ee.costo = "Debe ser ≥ 0.";
@@ -99,10 +99,13 @@ const EntryCard = ({ entry, index, total, sucursal, errors, onRemove }) => {
   const { state, dispatch } = useApp();
   const setField = (field, value) => dispatch({ type: "MANUAL/SET_ENTRY_FIELD", entryId: entry.id, field, value });
 
-  const subcatOptions = entry.type ? getSubcatsFor(state, entry.type) : [];
+  const subcatOptions = entry.type ? getSubcatsFor(state, entry.type, sucursal) : [];
   const typeRequiresSubcat = entry.type && subcatOptions.length > 0;
   const providerOptions = getProviderOptionsFor(state, sucursal, entry.type);
   const t = entry.type ? TYPES[entry.type] : null;
+  // Unidad efectiva: combustible usa la unidad configurada de la subcategoría.
+  const entryUnit = entry.type ? getEntryUnit(state, sucursal, entry.type, entry.subcat) : "";
+  const unitPending = entry.type === "combustible" && typeRequiresSubcat && !entry.subcat;
   const anomaly = detectAnomaly(state.records, sucursal, entry);
   const ee = errors || {};
 
@@ -150,7 +153,7 @@ const EntryCard = ({ entry, index, total, sucursal, errors, onRemove }) => {
               <Select
                 value={entry.subcat}
                 onChange={v => setField("subcat", v)}
-                options={subcatOptions.map(s => ({ value: s.id, label: s.label }))}
+                options={subcatOptions.map(s => ({ value: s.id, label: s.unidad ? `${s.label} · ${s.unidad}` : s.label }))}
                 placeholder="Elige una subcategoría…"
                 error={!!ee.subcat}
               />
@@ -163,13 +166,18 @@ const EntryCard = ({ entry, index, total, sucursal, errors, onRemove }) => {
           <Field
             label="Cantidad consumida" required
             error={ee.cantidad}
-            helper={entry.type ? `Unidad: ${TYPES[entry.type].unit}` : "Elige primero el tipo."}
+            helper={
+              !entry.type ? "Elige primero el tipo."
+              : (entry.type === "combustible" && !sucursal) ? "Elige primero la sucursal."
+              : unitPending ? "Elige la subcategoría para fijar la unidad."
+              : `Unidad: ${entryUnit}`
+            }
           >
             <Input
               value={entry.cantidad}
               onChange={v => setField("cantidad", v)}
               placeholder="0"
-              suffix={entry.type ? TYPES[entry.type].unit : ""}
+              suffix={unitPending ? "" : entryUnit}
               error={!!ee.cantidad}
             />
           </Field>
@@ -220,7 +228,7 @@ const EntryCard = ({ entry, index, total, sucursal, errors, onRemove }) => {
                 Consumo {anomaly.direction === "up" ? "más alto" : "más bajo"} de lo habitual
               </div>
               <div className="prt-hint" style={{ fontSize: 12, marginTop: 2, color: "var(--rl-warning-800)" }}>
-                {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. promedio {fmtNum(anomaly.avg)} {TYPES[entry.type].unit} en {sucursal}.
+                {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. promedio {fmtNum(anomaly.avg)} {entryUnit} en {sucursal}.
               </div>
             </div>
           </div>
@@ -365,6 +373,7 @@ const ManualPreview = () => {
         {d.entries.map((e, i) => {
           const t = TYPES[e.type];
           const sub = e.subcat ? subcatLabel(e.type, e.subcat) : null;
+          const eUnit = getEntryUnit(state, d.sucursal, e.type, e.subcat);
           const anomaly = detectAnomaly(state.records, d.sucursal, e);
           return (
             <Card key={e.id}>
@@ -380,7 +389,7 @@ const ManualPreview = () => {
                   {sub && <Chip size="sm">{sub}</Chip>}
                 </div>
                 <div style={{ marginLeft: "auto", font: "700 18px/1 var(--rl-font-display)" }}>
-                  {fmtNum(parseFloat(e.cantidad))} <span style={{ font: "600 13px/1 var(--rl-font-display)", color: "var(--rl-gray-500)" }}>{t?.unit}</span>
+                  {fmtNum(parseFloat(e.cantidad))} <span style={{ font: "600 13px/1 var(--rl-font-display)", color: "var(--rl-gray-500)" }}>{eUnit}</span>
                 </div>
               </div>
               <div className="prt-row" style={{ gap: 28, flexWrap: "wrap" }}>
@@ -399,7 +408,7 @@ const ManualPreview = () => {
               </div>
               {anomaly && (
                 <div style={{ marginTop: 10, color: "var(--rl-warning-700)", font: "500 12px/16px var(--rl-font-body)" }}>
-                  ⚠ Valor atípico: {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. promedio {fmtNum(anomaly.avg)} {t?.unit}.
+                  ⚠ Valor atípico: {anomaly.pct > 0 ? "+" : ""}{anomaly.pct}% vs. promedio {fmtNum(anomaly.avg)} {eUnit}.
                 </div>
               )}
             </Card>

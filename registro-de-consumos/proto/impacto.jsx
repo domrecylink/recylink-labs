@@ -146,13 +146,61 @@ const EmisGoalProgress = ({ current, goal, baseYear, baseValue }) => {
   );
 };
 
+// ---------- Barra de filtros (sucursal + período) — espejo del dashboard ----------
+const ImpactoFilterBar = () => {
+  const { state, dispatch } = useApp();
+  const f = state.emisFilters;
+  const set = (key, value) => dispatch({ type: "EMIS/SET_FILTER", key, value });
+  const custom = parseCustomPeriod(f.period);
+  const isCustom = !!custom;
+  const selValue = isCustom ? "custom" : f.period;
+  const defStart = months[0];
+  const defEnd = CURRENT_MONTH_KEY;
+  const onPeriodChange = (v) => {
+    if (v === "custom") set("period", `custom:${defStart}:${defEnd}`);
+    else set("period", v);
+  };
+  const setRange = (start, end) => set("period", `custom:${start}:${end}`);
+  return (
+    <div className="prt-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+      <select className="prt-select" style={{ width: 220 }} value={f.sucursal} onChange={e => set("sucursal", e.target.value)}>
+        <option value="all">Todas las sucursales ({activeSucNames(state).length})</option>
+        {activeSucNames(state).map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <select className="prt-select" style={{ width: 200 }} value={selValue} onChange={e => onPeriodChange(e.target.value)}>
+        <option value="12m">Últimos 12 meses</option>
+        <option value="6m">Últimos 6 meses</option>
+        <option value="3m">Últimos 3 meses</option>
+        <option value="1m">{periodLabel("1m")}</option>
+        <option value="custom">Personalizado…</option>
+      </select>
+      {isCustom && (
+        <div className="prt-row" style={{ gap: 6, alignItems: "center" }}>
+          <input type="month" className="prt-input" style={{ width: 150 }}
+            value={custom.start} max={custom.end}
+            onChange={e => e.target.value && setRange(e.target.value, custom.end)} />
+          <span className="prt-hint" style={{ opacity: 0.7 }}>—</span>
+          <input type="month" className="prt-input" style={{ width: 150 }}
+            value={custom.end} min={custom.start} max={CURRENT_MONTH_KEY}
+            onChange={e => e.target.value && setRange(custom.start, e.target.value)} />
+        </div>
+      )}
+      <Btn size="sm" kind="ghost" icon="filter_alt_off" onClick={() => {
+        set("sucursal", "all"); set("period", "12m");
+      }}>Limpiar filtros</Btn>
+    </div>
+  );
+};
+
 // ---------- Vista principal ----------
 const ImpactoView = () => {
   const { state, dispatch } = useApp();
   const scopeFilter = state.emisScope;
-  const agg = emissionsAggregate(state);
-  const month = emissionsByMonth(state, scopeFilter);
-  const bySuc = emissionsBySucursal(state, scopeFilter);
+  const filters = state.emisFilters;
+  const periodLbl = periodLabel(filters.period);
+  const agg = emissionsAggregate(state, filters);
+  const month = emissionsByMonth(state, scopeFilter, filters);
+  const bySuc = emissionsBySucursal(state, scopeFilter, filters);
   const sinFactor = sucursalesSinFactorNombres(state);
 
   // año base / meta (empresa)
@@ -182,6 +230,8 @@ const ImpactoView = () => {
         </>}
       />
 
+      <ImpactoFilterBar />
+
       {/* Alerta global */}
       {sinFactor.length > 0 && (
         <div className="emis-alert" style={{ marginBottom: 18 }}>
@@ -202,7 +252,7 @@ const ImpactoView = () => {
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 16, marginBottom: 18 }}>
         <div className="prt-kpi" style={{ background: "var(--rl-primary-900)", color: "#FFFFFF" }}>
           <div className="prt-kpi-head">
-            <span className="prt-kpi-label" style={{ color: "rgba(255,255,255,0.75)" }}>Total emisiones · 12 meses</span>
+            <span className="prt-kpi-label" style={{ color: "rgba(255,255,255,0.75)" }}>Total emisiones · {periodLbl}</span>
             <span className="prt-kpi-ico" style={{ background: "rgba(255,255,255,0.15)", color: "#FFFFFF" }}><Icon name="eco" size={22} /></span>
           </div>
           <div className="prt-kpi-value" style={{ color: "#FFFFFF" }}>
@@ -241,7 +291,7 @@ const ImpactoView = () => {
           <div className="prt-card-head">
             <div>
               <div className="prt-h3">Evolución de emisiones</div>
-              <div className="prt-hint" style={{ marginTop: 2 }}>tCO₂e por mes · últimos 12 meses</div>
+              <div className="prt-hint" style={{ marginTop: 2 }}>tCO₂e por mes · {periodLbl.toLowerCase()}</div>
             </div>
             <div className="prt-row" style={{ gap: 6, flexWrap: "wrap" }}>
               {scopeChips.map(sc => (
@@ -287,7 +337,7 @@ const ImpactoView = () => {
             <div>
               <div className="prt-h3">Comparativa entre sucursales</div>
               <div className="prt-hint" style={{ marginTop: 2 }}>
-                {scopeFilter === "all" ? "Todos los alcances" : SCOPES[scopeFilter].label} · tCO₂e en 12 meses
+                {scopeFilter === "all" ? "Todos los alcances" : SCOPES[scopeFilter].label} · tCO₂e · {periodLbl.toLowerCase()}
               </div>
             </div>
             <Chip>{bySuc.filter(s => s.activa).length} activas</Chip>

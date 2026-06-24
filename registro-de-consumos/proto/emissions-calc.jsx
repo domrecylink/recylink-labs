@@ -30,12 +30,23 @@ function sucByName(state) {
   return m;
 }
 
+// Conjunto de meses (YYYY-MM) que cubre un período del filtro de impacto.
+function emisPeriodSet(filters) {
+  if (!filters || !filters.period) return null; // null = sin filtro de período
+  return new Set(periodToMonthKeys(filters.period));
+}
+
 // Convierte cada registro activo en su emisión tCO2e usando el factor vigente.
-function emissionsByRecord(state) {
+// `filters` (opcional) acota por sucursal y período igual que el dashboard.
+function emissionsByRecord(state, filters) {
   const byName = sucByName(state);
   const sinFactorIds = sucSinFactorIds(state);
+  const sucFilter = filters ? filters.sucursal : "all";
+  const mset = emisPeriodSet(filters);
   return state.records
     .filter(r => r.estado !== "eliminada")
+    .filter(r => sucFilter === "all" || !sucFilter || r.sucursal === sucFilter)
+    .filter(r => !mset || mset.has(r.date.slice(0, 7)))
     .map(r => {
       const suc = byName[r.sucursal];
       const sucId = suc ? suc.id : null;
@@ -50,13 +61,17 @@ function emissionsByRecord(state) {
 }
 
 // Emisiones de refrigerantes (Alcance 1) → filas tipo {sucId, sucursal, tipo, gwp, cargaKg, mes, tco2e}
-function refrigEmissionRows(state) {
+function refrigEmissionRows(state, filters) {
   const gwpById = {};
   REFRIGERANTES_CATALOG.forEach(r => { gwpById[r.id] = r.gwp; });
+  const sucFilter = filters ? filters.sucursal : "all";
+  const mset = emisPeriodSet(filters);
   const rows = [];
   state.configSucursales.forEach(suc => {
+    if (sucFilter !== "all" && sucFilter && suc.nombre !== sucFilter) return;
     const list = state.emissions.refrigerantesSucursal[suc.id] || [];
     list.forEach(rf => {
+      if (mset && !mset.has(rf.mes)) return;
       const gwp = gwpById[rf.tipo] || 0;
       rows.push({
         sucId: suc.id, sucursal: suc.nombre,
@@ -69,9 +84,9 @@ function refrigEmissionRows(state) {
 }
 
 // Agregado total por alcance + por categoría (electricidad/combustible/agua/refrigerantes)
-function emissionsAggregate(state) {
-  const recs = emissionsByRecord(state);
-  const refs = refrigEmissionRows(state);
+function emissionsAggregate(state, filters) {
+  const recs = emissionsByRecord(state, filters);
+  const refs = refrigEmissionRows(state, filters);
 
   const byScope = { 1: 0, 2: 0, 3: 0 };
   const byCat = { electricidad: 0, combustible: 0, agua: 0, refrigerantes: 0 };
@@ -86,11 +101,13 @@ function emissionsAggregate(state) {
   return { total, byScope, byCat, recs, refs };
 }
 
-// Evolución mensual del total tCO2e (12 meses), opcionalmente filtrada por alcance.
-function emissionsByMonth(state, scopeFilter = "all") {
-  const recs = emissionsByRecord(state);
-  const refs = refrigEmissionRows(state);
-  const data = months.map(mk => {
+// Evolución mensual del total tCO2e, filtrada por alcance + (sucursal/período).
+// El eje de meses se ajusta al período seleccionado.
+function emissionsByMonth(state, scopeFilter = "all", filters) {
+  const recs = emissionsByRecord(state, filters);
+  const refs = refrigEmissionRows(state, filters);
+  const axis = filters && filters.period ? periodToMonthKeys(filters.period) : months.slice();
+  const data = axis.map(mk => {
     let v = 0;
     recs.forEach(r => {
       if (r.date.startsWith(mk) && (scopeFilter === "all" || r.scope === +scopeFilter)) v += r.tco2e;
@@ -100,15 +117,19 @@ function emissionsByMonth(state, scopeFilter = "all") {
     }
     return v;
   });
-  return { months: months.slice(), data };
+  return { months: axis, data };
 }
 
 // tCO2e por sucursal (incluye refrigerantes), marca activas/inactivas.
-function emissionsBySucursal(state, scopeFilter = "all") {
-  const recs = emissionsByRecord(state);
-  const refs = refrigEmissionRows(state);
+// Con filtro de sucursal específica, sólo devuelve esa fila.
+function emissionsBySucursal(state, scopeFilter = "all", filters) {
+  const recs = emissionsByRecord(state, filters);
+  const refs = refrigEmissionRows(state, filters);
   const sinFactorIds = sucSinFactorIds(state);
-  return state.configSucursales.map(suc => {
+  const sucFilter = filters ? filters.sucursal : "all";
+  return state.configSucursales
+    .filter(suc => sucFilter === "all" || !sucFilter || suc.nombre === sucFilter)
+    .map(suc => {
     let v = 0;
     recs.forEach(r => {
       if (r.sucId === suc.id && (scopeFilter === "all" || r.scope === +scopeFilter)) v += r.tco2e;
