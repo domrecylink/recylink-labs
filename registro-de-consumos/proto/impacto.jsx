@@ -1,7 +1,7 @@
 // Pantalla 1 — Dashboard de Impacto Ambiental (emisiones GEI)
 
 // ---------- Charts (nombres únicos para evitar colisiones) ----------
-const EmisAreaChart = ({ months: monthArr, data, color, h = 230 }) => {
+const EmisAreaChart = ({ months: monthArr, data, color = "var(--rl-success-600)", h = 230 }) => {
   const w = 640;
   const padL = 46, padR = 16, padT = 18, padB = 28;
   const innerW = w - padL - padR, innerH = h - padT - padB;
@@ -9,36 +9,93 @@ const EmisAreaChart = ({ months: monthArr, data, color, h = 230 }) => {
   const yMax = Math.max(...data, 1) * 1.1;
   const sx = i => padL + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
   const sy = y => padT + (1 - y / yMax) * innerH;
-  const line = data.map((y, i) => (i === 0 ? "M" : "L") + sx(i).toFixed(1) + "," + sy(y).toFixed(1)).join(" ");
+  const points = data.map((y, i) => [sx(i), sy(y)]);
+  // smoothPath se declara en dashboard.jsx (script global cargado antes).
+  const line = (typeof smoothPath === "function" && n > 1)
+    ? smoothPath(points)
+    : data.map((y, i) => (i === 0 ? "M" : "L") + sx(i).toFixed(1) + "," + sy(y).toFixed(1)).join(" ");
   const area = line + ` L${sx(n - 1).toFixed(1)},${(padT + innerH).toFixed(1)} L${sx(0).toFixed(1)},${(padT + innerH).toFixed(1)} Z`;
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => yMax * t);
+
+  const [hoverIdx, setHoverIdx] = React.useState(null);
+  const colW = n > 1 ? innerW / (n - 1) : innerW;
+
+  // Posicionamiento tooltip: porcentaje sobre viewBox para escalar con SVG responsive.
+  const tipLeftPct = hoverIdx != null ? (sx(hoverIdx) / w) * 100 : 0;
+  const tipTopPct  = hoverIdx != null ? (sy(data[hoverIdx]) / h) * 100 : 0;
+
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ display: "block", overflow: "visible" }}>
-      <defs>
-        <linearGradient id="emisGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.20" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
-        <line key={i} x1={padL} x2={w - padR} y1={padT + t * innerH} y2={padT + t * innerH}
-              stroke="var(--rl-gray-200)" strokeWidth="1" strokeDasharray={i === 4 ? "0" : "2 4"} />
-      ))}
-      {yTicks.map((v, i) => (
-        <text key={i} x={padL - 8} y={sy(v) + 3} textAnchor="end" fontSize="10"
-              fontFamily="var(--rl-font-display)" fill="var(--rl-gray-500)">{fmtTon(v, 0)}</text>
-      ))}
-      <text x={padL - 8} y={padT - 6} textAnchor="end" fontSize="10"
-            fontFamily="var(--rl-font-display)" fill="var(--rl-gray-500)" fontWeight="700">tCO₂e</text>
-      {monthArr.map((mk, i) => {
-        if (n > 6 && i % Math.ceil(n / 6) !== 0) return null;
-        return <text key={i} x={sx(i)} y={h - 8} textAnchor="middle" fontSize="10"
-                     fontFamily="var(--rl-font-display)" fill="var(--rl-gray-500)">{monthLabelShort(mk)}</text>;
-      })}
-      <path d={area} fill="url(#emisGrad)" />
-      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      {data.map((y, i) => <circle key={i} cx={sx(i)} cy={sy(y)} r="3" fill="#FFFFFF" stroke={color} strokeWidth="2" />)}
-    </svg>
+    <div style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" style={{ display: "block", overflow: "visible" }}>
+        <defs>
+          <linearGradient id="emisGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+          <line key={i} x1={padL} x2={w - padR} y1={padT + t * innerH} y2={padT + t * innerH}
+                stroke="var(--rl-gray-200)" strokeWidth="1" strokeDasharray={i === 4 ? "0" : "2 4"} />
+        ))}
+        {yTicks.map((v, i) => (
+          <text key={i} x={padL - 8} y={sy(v) + 3} textAnchor="end" fontSize="10"
+                fontFamily="var(--rl-font-display)" fill="var(--rl-gray-500)">{fmtTon(v, 0)}</text>
+        ))}
+        <text x={padL - 8} y={padT - 6} textAnchor="end" fontSize="10"
+              fontFamily="var(--rl-font-display)" fill="var(--rl-gray-500)" fontWeight="700">tCO₂e</text>
+        {monthArr.map((mk, i) => {
+          if (n > 6 && i % Math.ceil(n / 6) !== 0) return null;
+          return <text key={i} x={sx(i)} y={h - 8} textAnchor="middle" fontSize="10"
+                       fontFamily="var(--rl-font-display)" fill="var(--rl-gray-500)">{monthLabelShort(mk)}</text>;
+        })}
+        <path d={area} fill="url(#emisGrad)" />
+        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {data.map((y, i) => <circle key={i} cx={sx(i)} cy={sy(y)} r="3" fill="#FFFFFF" stroke={color} strokeWidth="2" />)}
+
+        {hoverIdx != null && (
+          <g style={{ pointerEvents: "none" }}>
+            <line x1={sx(hoverIdx)} x2={sx(hoverIdx)} y1={padT} y2={padT + innerH}
+                  stroke="var(--rl-gray-500)" strokeWidth="1" strokeDasharray="3 3" />
+            <circle cx={sx(hoverIdx)} cy={sy(data[hoverIdx])} r="5"
+                    fill={color} stroke="#FFFFFF" strokeWidth="2" />
+          </g>
+        )}
+
+        {monthArr.map((mk, i) => (
+          <rect key={"hover-" + i}
+                x={sx(i) - colW / 2} y={padT}
+                width={colW} height={innerH}
+                fill="transparent"
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)} />
+        ))}
+      </svg>
+
+      {hoverIdx != null && (
+        <div style={{
+          position: "absolute",
+          left: tipLeftPct + "%",
+          top:  tipTopPct  + "%",
+          transform: "translate(-50%, calc(-100% - 12px))",
+          background: "var(--rl-gray-900, #1A1A1A)",
+          color: "#FFFFFF",
+          padding: "8px 12px",
+          borderRadius: 8,
+          font: "500 12px/1.3 var(--rl-font-display)",
+          whiteSpace: "nowrap",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          pointerEvents: "none",
+          zIndex: 2,
+        }}>
+          <div style={{ opacity: 0.7, fontSize: 11, textTransform: "capitalize" }}>
+            {monthLabelShort(monthArr[hoverIdx])}
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginTop: 2 }}>
+            {fmtTon(data[hoverIdx])} <span style={{ opacity: 0.7, fontSize: 11 }}>tCO₂e</span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -216,7 +273,7 @@ const ImpactoView = () => {
     { id: "2", label: SCOPES[2].label },
     { id: "3", label: SCOPES[3].label },
   ];
-  const lineColor = scopeFilter === "all" ? "var(--rl-primary-900)" : SCOPE_COLORS[scopeFilter].stroke;
+  const lineColor = scopeFilter === "all" ? "var(--rl-success-600)" : SCOPE_COLORS[scopeFilter].stroke;
 
   return (
     <div>
