@@ -179,6 +179,27 @@ function heatmapData(state) {
 // ============================================================
 // Chart components
 // ============================================================
+
+// Catmull-Rom → cubic Bezier smoothing. tension ~0.2 = gentle curve, no overshoot.
+function smoothPath(points) {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M${points[0][0]},${points[0][1]}`;
+  const t = 0.2;
+  let d = `M${points[0][0]},${points[0][1]}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) * t;
+    const c1y = p1[1] + (p2[1] - p0[1]) * t;
+    const c2x = p2[0] - (p3[0] - p1[0]) * t;
+    const c2y = p2[1] - (p3[1] - p1[1]) * t;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
 const MultiLineChart = ({ months: monthArr, series, unit, h = 220 }) => {
   const w = 620;
   const padL = 44, padR = 16, padT = 18, padB = 30;
@@ -225,7 +246,7 @@ const MultiLineChart = ({ months: monthArr, series, unit, h = 220 }) => {
 
         {/* lines */}
         {series.map((s, si) => {
-          const path = s.data.map((y, i) => (i === 0 ? "M" : "L") + sx(i).toFixed(1) + "," + sy(y).toFixed(1)).join(" ");
+          const path = smoothPath(s.data.map((y, i) => [sx(i), sy(y)]));
           return (
             <g key={si}>
               <path d={path} fill="none" stroke={s.color} strokeWidth="2.5"
@@ -577,9 +598,20 @@ const RecentTable = () => {
   const [editing, setEditing] = React.useState(null); // { id, field }
   const [confirmModal, setConfirmModal] = React.useState(null); // { action, rec }
   const allFiltered = selectFilteredRecords(state);
-  const rows = [...allFiltered]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 12);
+  const sorted = React.useMemo(
+    () => [...allFiltered].sort((a, b) => b.date.localeCompare(a.date)),
+    [allFiltered]
+  );
+  const PAGE_SIZE = 10;
+  const [page, setPage] = React.useState(0);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  React.useEffect(() => {
+    if (page > totalPages - 1) setPage(0);
+  }, [totalPages, page]);
+  const currentPage = Math.min(page, totalPages - 1);
+  const rows = sorted.slice(currentPage * PAGE_SIZE, currentPage * PAGE_SIZE + PAGE_SIZE);
+  const rangeStart = sorted.length === 0 ? 0 : currentPage * PAGE_SIZE + 1;
+  const rangeEnd = currentPage * PAGE_SIZE + rows.length;
 
   const handleDelete = (rec) => setConfirmModal({ action: "delete", rec });
   const handleRestore = (rec) => setConfirmModal({ action: "restore", rec });
@@ -636,7 +668,7 @@ const RecentTable = () => {
             <option value="eliminada">Solo eliminadas</option>
             <option value="all">Todas</option>
           </select>
-          <Chip size="sm">{rows.length} de {allFiltered.length}</Chip>
+          <Chip size="sm">{rangeStart}–{rangeEnd} de {sorted.length}</Chip>
           <Btn size="sm" icon="open_in_new">Ver todo</Btn>
         </div>
       </div>
@@ -768,6 +800,36 @@ const RecentTable = () => {
           </tbody>
         </table>
       </div>
+
+      {sorted.length > PAGE_SIZE && (
+        <div className="prt-row" style={{
+          justifyContent: "space-between",
+          padding: "10px 22px",
+          borderTop: "1px solid var(--rl-gray-100)",
+          background: "var(--rl-gray-50)",
+        }}>
+          <span className="prt-hint" style={{ font: "500 12px/1 var(--rl-font-body)" }}>
+            Mostrando {rangeStart}–{rangeEnd} de {sorted.length} registros
+          </span>
+          <div className="prt-row" style={{ gap: 6 }}>
+            <Btn size="sm" kind="ghost" icon="chevron_left"
+              disabled={currentPage === 0}
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+            >Anterior</Btn>
+            <span className="prt-hint" style={{
+              font: "600 12px/1 var(--rl-font-body)",
+              padding: "0 8px",
+              alignSelf: "center",
+            }}>
+              Página {currentPage + 1} de {totalPages}
+            </span>
+            <Btn size="sm" kind="ghost" iconRight="chevron_right"
+              disabled={currentPage >= totalPages - 1}
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+            >Siguiente</Btn>
+          </div>
+        </div>
+      )}
 
       {confirmModal?.action === "delete" && (
         <ConfirmDialog
