@@ -93,8 +93,15 @@ const Shell = () => {
   );
 };
 
+// Views that depend on synced records and should show the loader while the
+// first fetch is in flight. Onboarding/config/register don't need records.
+const DATA_DRIVEN_VIEWS = new Set(["landing", "dashboard", "matrix", "impacto", "factores", "metas"]);
+
 const ViewSwitcher = () => {
   const { state } = useApp();
+  if (state.recordsLoading && state.records.length === 0 && DATA_DRIVEN_VIEWS.has(state.view)) {
+    return <LoadingScreen label="Cargando" />;
+  }
   switch (state.view) {
     case "manual":      return <ManualView />;
     case "upload":      return <UploadView />;
